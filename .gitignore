@@ -1,0 +1,4 @@
+# Per-developer / tool files at the repo root. backend/ and frontend/ keep their own .gitignore files.
+.claude/
+.DS_Store
+Thumbs.db
