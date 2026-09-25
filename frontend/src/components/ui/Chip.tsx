@@ -9,18 +9,26 @@ interface ChipProps {
   onPress: () => void;
   /** Shows a check mark when selected — for multi-select groups. */
   showCheck?: boolean;
+  /** Dimmed and not pressable, e.g. when a pick limit is reached. */
+  disabled?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
 }
 
 /** A pressable, selectable pill with real button semantics and a comfortable hit area. */
-export function Chip({ label, selected = false, onPress, showCheck = false, icon }: ChipProps) {
+export function Chip({ label, selected = false, onPress, showCheck = false, icon, disabled = false }: ChipProps) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       hitSlop={4}
-      style={({ pressed }) => [styles.chip, selected && styles.chipSelected, !selected && pressed && styles.chipPressed]}
+      style={({ pressed }) => [
+        styles.chip,
+        selected && styles.chipSelected,
+        !selected && pressed && styles.chipPressed,
+        disabled && styles.chipDisabled,
+      ]}
     >
       {showCheck && selected ? <Ionicons name="checkmark" size={15} color="#fff" /> : null}
       {icon ? <Ionicons name={icon} size={15} color={selected ? '#fff' : colors.textMuted} /> : null}
@@ -60,6 +68,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     cursor: 'pointer',
+  },
+  chipDisabled: {
+    opacity: 0.4,
   },
   chipPressed: {
     borderColor: colors.textMuted,

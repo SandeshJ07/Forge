@@ -150,7 +150,7 @@ export default function PlanPreferencesScreen() {
   return (
     <ScreenContainer>
       <Text style={styles.intro}>
-        Tell {provider.name} how you want to train this week. Anything you skip, it decides based on your goal and
+        Tell {provider.name} how you want to train this week. Anything you skip, it decides based on your goals and
         history.
       </Text>
 

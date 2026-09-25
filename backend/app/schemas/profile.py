@@ -3,14 +3,17 @@ from uuid import UUID
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+Goal = Literal["strength", "hypertrophy", "general_fitness", "endurance"]
+MAX_GOALS = 2
 
 
 class UserProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     user_id: UUID
-    goal: str | None
+    goals: list[str]
     experience_level: str | None
     equipment_access: list[str] | None
     unit_system: str
@@ -27,7 +30,8 @@ class UserProfileResponse(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    goal: str | None = None
+    # Most important first; at most MAX_GOALS.
+    goals: list[Goal] | None = Field(default=None, max_length=MAX_GOALS)
     experience_level: str | None = None
     equipment_access: list[str] | None = None
     unit_system: str | None = None
@@ -38,6 +42,12 @@ class UserProfileUpdate(BaseModel):
     gender: Literal["male", "female", "other", "prefer_not_to_say"] | None = None
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
     height_cm: float | None = Field(default=None, ge=50, le=300)
+
+    @field_validator("goals")
+    @classmethod
+    def _dedupe_goals(cls, value: list[str] | None) -> list[str]:
+        # An explicit null clears them; an omitted field (exclude_unset) leaves them alone.
+        return [] if value is None else list(dict.fromkeys(value))
 
     def dump_set_fields(self) -> dict:
         """Only the fields the client actually sent, so a partial update never

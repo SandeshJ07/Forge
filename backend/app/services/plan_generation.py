@@ -173,7 +173,7 @@ def _build_prompt_input(db: Session, user_id: UUID, plan_equipment: list[str] | 
         age = datetime.now(timezone.utc).year - profile.birth_year
 
     return PlanGenerationInput(
-        goal=profile.goal if profile else None,
+        goals=list(profile.goals) if profile else [],
         experience_level=profile.experience_level if profile else None,
         equipment_access=profile.equipment_access if profile else None,
         unit_system=profile.unit_system if profile else "metric",

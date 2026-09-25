@@ -31,6 +31,7 @@ import { PhotoBackdrop } from '@/components/ui/PhotoBackdrop';
 import { OnboardingProgressBar } from '@/components/OnboardingProgressBar';
 import { HERO_IMAGE, ONBOARDING_IMAGES, type OnboardingImageName } from '@/constants/images';
 import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
+import { GOAL_OPTIONS, MAX_GOALS, toggleGoal } from '@/constants/goals';
 import { addMeasurement } from '@/api/measurements';
 import { useCompleteOnboarding, useUpsertUserProfile } from '@/hooks/useUserProfile';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -42,12 +43,6 @@ import { colors, spacing } from '@/constants/theme';
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: 'metric', label: 'Metric', description: 'Kilograms and centimetres' },
   { value: 'imperial', label: 'Imperial', description: 'Pounds and inches' },
-];
-const GOALS: { value: Goal; label: string; description: string }[] = [
-  { value: 'strength', label: 'Strength', description: 'Lift heavier — lower reps, longer rest' },
-  { value: 'hypertrophy', label: 'Build muscle', description: 'Size and shape — moderate reps, more volume' },
-  { value: 'general_fitness', label: 'General fitness', description: 'Feel fitter and move better day to day' },
-  { value: 'endurance', label: 'Endurance', description: 'Go longer and recover faster' },
 ];
 const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string; description: string }[] = [
   { value: 'beginner', label: 'Beginner', description: 'New to lifting, or returning after a long break' },
@@ -74,7 +69,7 @@ interface OnboardingData {
   birthYear: string;
   height: string;
   startingWeight: string;
-  goal: Goal | null;
+  goals: Goal[];
   experienceLevel: ExperienceLevel | null;
   equipment: string[];
   planCadence: PlanRefreshCadence;
@@ -86,7 +81,7 @@ const INITIAL_DATA: OnboardingData = {
   birthYear: '',
   height: '',
   startingWeight: '',
-  goal: null,
+  goals: [],
   experienceLevel: null,
   equipment: [],
   planCadence: 'weekly',
@@ -205,24 +200,33 @@ const STEPS: OnboardingStep[] = [
   },
   {
     key: 'goal',
-    title: "What's your main goal?",
-    subtitle: 'Your plans are built around this. You can change it any time.',
+    title: 'What are your goals?',
+    subtitle: `Pick up to ${MAX_GOALS} — the first one you pick is your main goal. You can change them any time.`,
     image: 'goal',
-    isSkippable: (d) => !d.goal,
-    render: ({ data, update, wide }) => (
-      <OptionList wide={wide}>
-        {GOALS.map((option) => (
-          <OptionCell key={option.value} wide={wide}>
-            <OptionCard
-              label={option.label}
-              description={option.description}
-              selected={data.goal === option.value}
-              onPress={() => update('goal', option.value)}
-            />
-          </OptionCell>
-        ))}
-      </OptionList>
-    ),
+    isSkippable: (d) => !d.goals.length,
+    render: ({ data, update, wide }) => {
+      const full = data.goals.length >= MAX_GOALS;
+      return (
+        <OptionList wide={wide}>
+          {GOAL_OPTIONS.map((option) => {
+            const selected = data.goals.includes(option.value);
+            const rank = data.goals.indexOf(option.value);
+            return (
+              <OptionCell key={option.value} wide={wide}>
+                <OptionCard
+                  multi
+                  label={rank === 0 && data.goals.length > 1 ? `${option.label} · main` : option.label}
+                  description={option.description}
+                  selected={selected}
+                  disabled={full && !selected}
+                  onPress={() => update('goals', toggleGoal(data.goals, option.value))}
+                />
+              </OptionCell>
+            );
+          })}
+        </OptionList>
+      );
+    },
   },
   {
     key: 'experience',
@@ -327,7 +331,7 @@ export default function OnboardingScreen() {
         gender: data.gender,
         birth_year: Number.isFinite(parsedBirthYear) ? parsedBirthYear : null,
         height_cm: heightCm,
-        goal: data.goal,
+        goals: data.goals,
         experience_level: data.experienceLevel,
         equipment_access: data.equipment,
         plan_refresh_cadence: data.planCadence,

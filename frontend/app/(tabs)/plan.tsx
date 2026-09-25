@@ -126,7 +126,7 @@ export default function ExerciseGroupsScreen() {
           <Ionicons name="albums-outline" size={32} color={colors.primary} />
           <Text style={styles.emptyTitle}>No exercise groups yet</Text>
           <Text style={[styles.mutedText, styles.centered]}>
-            Get workout groups built from your goal, experience, equipment and history. Groups mapped to a weekday are
+            Get workout groups built from your goals, experience, equipment and history. Groups mapped to a weekday are
             suggested on that day when you log a workout, and any group can be loaded whenever you like.
           </Text>
           <Button label="Create exercise groups" onPress={handleGenerate} />

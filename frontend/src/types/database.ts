@@ -171,7 +171,8 @@ export interface IntegrationToken {
 
 export interface UserProfile {
   user_id: string;
-  goal: Goal | null;
+  /** Up to two, most important first. */
+  goals: Goal[];
   experience_level: ExperienceLevel | null;
   equipment_access: string[] | null;
   unit_system: UnitSystem;
