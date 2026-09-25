@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useRateWorkout } from '@/hooks/useWorkouts';
+import { Chip, ChipGroup } from '@/components/ui/Chip';
 import type { Workout } from '@/types/database';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
 
 const FELT_OPTIONS: { value: NonNullable<Workout['felt_rating']>; label: string }[] = [
   { value: 'too_easy', label: 'Too easy' },
@@ -12,78 +13,54 @@ const FELT_OPTIONS: { value: NonNullable<Workout['felt_rating']>; label: string 
 export function WorkoutFeedbackControl({ workout }: { workout: Workout }) {
   const rateWorkout = useRateWorkout();
 
+  function rate(fields: Partial<Pick<Workout, 'felt_rating' | 'enjoyed'>>) {
+    rateWorkout.mutate({
+      workoutId: workout.id,
+      fields: {
+        felt_rating: workout.felt_rating,
+        perceived_exertion: workout.perceived_exertion,
+        enjoyed: workout.enjoyed,
+        notes: workout.notes,
+        ...fields,
+      },
+    });
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.label}>How did it feel?</Text>
-      <View style={styles.row}>
+      <ChipGroup>
         {FELT_OPTIONS.map((option) => (
-          <Text
+          <Chip
             key={option.value}
-            onPress={() =>
-              rateWorkout.mutate({
-                workoutId: workout.id,
-                fields: {
-                  felt_rating: option.value,
-                  perceived_exertion: workout.perceived_exertion,
-                  enjoyed: workout.enjoyed,
-                  notes: workout.notes,
-                },
-              })
-            }
-            style={[styles.chip, workout.felt_rating === option.value && styles.chipActive]}
-          >
-            {option.label}
-          </Text>
+            label={option.label}
+            selected={workout.felt_rating === option.value}
+            // Tapping the active rating again clears it.
+            onPress={() => rate({ felt_rating: workout.felt_rating === option.value ? null : option.value })}
+          />
         ))}
-        <Text
-          onPress={() =>
-            rateWorkout.mutate({
-              workoutId: workout.id,
-              fields: {
-                felt_rating: workout.felt_rating,
-                perceived_exertion: workout.perceived_exertion,
-                enjoyed: !workout.enjoyed,
-                notes: workout.notes,
-              },
-            })
-          }
-          style={[styles.chip, workout.enjoyed && styles.chipActive]}
-        >
-          {workout.enjoyed ? '❤️ Enjoyed' : '🤍 Enjoyed?'}
-        </Text>
-      </View>
+        <Chip
+          label="Enjoyed it"
+          icon={workout.enjoyed ? 'heart' : 'heart-outline'}
+          selected={Boolean(workout.enjoyed)}
+          onPress={() => rate({ enjoyed: !workout.enjoyed })}
+        />
+      </ChipGroup>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   label: {
     color: colors.textMuted,
-    fontSize: 12,
-  },
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  chip: {
-    fontSize: 12,
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    overflow: 'hidden',
-  },
-  chipActive: {
-    color: '#fff',
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

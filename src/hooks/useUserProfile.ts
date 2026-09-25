@@ -26,7 +26,7 @@ export function useUpsertUserProfile() {
   const userId = useAuthStore((s) => s.session?.userId);
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (fields: Partial<Omit<UserProfile, 'user_id' | 'anthropic_api_key_set'>>) =>
+    mutationFn: (fields: Partial<Omit<UserProfile, 'user_id' | 'anthropic_api_key_set' | 'gemini_api_key_set' | 'plan_preferences'>>) =>
       upsertUserProfile(fields),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-profile', userId] });

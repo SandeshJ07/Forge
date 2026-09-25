@@ -1,16 +1,25 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { PersonalRecordWithExercise } from '@/api/personalRecords';
+import { useUnitStore } from '@/stores/useUnitStore';
+import { formatDay, formatWeight } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 
 export function PersonalRecordRow({ record }: { record: PersonalRecordWithExercise }) {
+  const unitSystem = useUnitStore((s) => s.unitSystem);
+
   return (
     <View style={styles.row}>
-      <Text style={styles.name}>{record.exercise_name}</Text>
+      <Ionicons name="trophy-outline" size={16} color={colors.warning} />
+      <Text style={styles.name} numberOfLines={1}>
+        {record.exercise_name}
+      </Text>
       <View style={styles.valueBlock}>
         <Text style={styles.weight}>
-          {record.best_weight_kg}kg{record.best_weight_reps ? ` × ${record.best_weight_reps}` : ''}
+          {formatWeight(Number(record.best_weight_kg), unitSystem)}
+          {record.best_weight_reps ? ` × ${record.best_weight_reps}` : ''}
         </Text>
-        <Text style={styles.date}>{new Date(record.achieved_at).toLocaleDateString()}</Text>
+        <Text style={styles.date}>{formatDay(record.achieved_at)}</Text>
       </View>
     </View>
   );
@@ -19,8 +28,8 @@ export function PersonalRecordRow({ record }: { record: PersonalRecordWithExerci
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -35,7 +44,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   weight: {
-    color: colors.primary,
+    color: colors.text,
     fontSize: 15,
     fontWeight: '700',
   },

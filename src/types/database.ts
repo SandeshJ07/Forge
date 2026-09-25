@@ -6,7 +6,8 @@ export type ExerciseFeedbackRating = 'like' | 'dislike' | 'neutral';
 export type Goal = 'strength' | 'hypertrophy' | 'general_fitness' | 'endurance';
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 export type UnitSystem = 'metric' | 'imperial';
-export type IntegrationProvider = 'anthropic';
+export type AIProvider = 'anthropic' | 'gemini';
+export type IntegrationProvider = AIProvider;
 export type PlanRefreshCadence = 'weekly' | 'biweekly' | 'monthly';
 export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
 export type MeasurementType =
@@ -94,6 +95,35 @@ export interface ProgressPhoto {
   created_at: string;
 }
 
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+/** Individual muscles only — the user builds each day themselves; nothing is pre-grouped. */
+export type Muscle =
+  | 'chest'
+  | 'back'
+  | 'shoulders'
+  | 'biceps'
+  | 'triceps'
+  | 'forearms'
+  | 'abs'
+  | 'lower_back'
+  | 'quads'
+  | 'hamstrings'
+  | 'glutes'
+  | 'calves'
+  | 'cardio';
+
+/** Per-plan choices from the Plan preferences screen; every field optional (the AI decides). */
+export interface PlanPreferences {
+  training_days?: Weekday[];
+  /** Muscles per day, any number; days left out are the AI's call. */
+  day_focus?: Partial<Record<Weekday, Muscle[]>>;
+  include_warmup?: boolean;
+  /** Individual equipment keys (src/constants/equipmentCatalog.ts); omitted = not specified. */
+  equipment?: string[];
+  session_minutes?: 30 | 45 | 60 | 90;
+  notes?: string;
+}
+
 export interface GeneratedPlan {
   id: string;
   user_id: string;
@@ -101,6 +131,16 @@ export interface GeneratedPlan {
   plan: PlanPayload;
   source_summary: Record<string, unknown>;
   accepted: boolean;
+  status: 'generating' | 'ready' | 'failed';
+  error: string | null;
+}
+
+/** GET /plans/generation — the user's most recent background generation. */
+export interface PlanGenerationStatus {
+  status: 'idle' | 'generating' | 'ready' | 'failed';
+  plan_id: string | null;
+  error: string | null;
+  started_at: string | null;
 }
 
 export interface IntegrationToken {
@@ -119,13 +159,17 @@ export interface UserProfile {
   experience_level: ExperienceLevel | null;
   equipment_access: string[] | null;
   unit_system: UnitSystem;
+  ai_provider: AIProvider;
   anthropic_api_key_set: boolean;
+  gemini_api_key_set: boolean;
   include_warmup: boolean;
   plan_refresh_cadence: PlanRefreshCadence;
   gender: Gender | null;
   birth_year: number | null;
   height_cm: number | null;
   onboarded_at: string | null;
+  /** Last Plan preferences submitted (saved on "Create my plan", even if generation failed). */
+  plan_preferences: PlanPreferences | null;
 }
 
 export interface PersonalRecord {

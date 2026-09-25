@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { Card } from '@/components/ui/Card';
@@ -6,10 +7,15 @@ import { useExercise, useExerciseFeedbackMap, useSetExerciseFeedback } from '@/h
 import type { ExerciseFeedbackRating } from '@/types/database';
 import { colors, radii, spacing } from '@/constants/theme';
 
-const FEEDBACK_OPTIONS: { rating: ExerciseFeedbackRating; label: string; icon: string }[] = [
-  { rating: 'dislike', label: 'Dislike', icon: '👎' },
-  { rating: 'neutral', label: 'Neutral', icon: '➖' },
-  { rating: 'like', label: 'Like', icon: '👍' },
+const FEEDBACK_OPTIONS: {
+  rating: ExerciseFeedbackRating;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconActive: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { rating: 'dislike', label: 'Avoid', icon: 'thumbs-down-outline', iconActive: 'thumbs-down' },
+  { rating: 'neutral', label: 'Neutral', icon: 'remove-circle-outline', iconActive: 'remove-circle' },
+  { rating: 'like', label: 'Like', icon: 'thumbs-up-outline', iconActive: 'thumbs-up' },
 ];
 
 export default function ExerciseDetailScreen() {
@@ -23,7 +29,9 @@ export default function ExerciseDetailScreen() {
   if (isLoading || !exercise) {
     return (
       <ScreenContainer>
-        <Text style={styles.meta}>Loading…</Text>
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
       </ScreenContainer>
     );
   }
@@ -42,20 +50,28 @@ export default function ExerciseDetailScreen() {
       </Text>
 
       <Card style={styles.feedbackCard}>
-        <Text style={styles.cardTitle}>How do you feel about this exercise?</Text>
+        <Text style={styles.cardTitle}>Include this in your plans?</Text>
+        <Text style={styles.cardHint}>Liked exercises are favoured when your plan is generated; avoided ones are left out.</Text>
         <View style={styles.feedbackRow}>
-          {FEEDBACK_OPTIONS.map((option) => (
-            <Text
-              key={option.rating}
-              onPress={() => setFeedback.mutate({ exerciseId: exercise.id, rating: option.rating })}
-              style={[
-                styles.feedbackButton,
-                currentFeedback === option.rating && styles.feedbackButtonActive,
-              ]}
-            >
-              {option.icon} {option.label}
-            </Text>
-          ))}
+          {FEEDBACK_OPTIONS.map((option) => {
+            const active = currentFeedback === option.rating;
+            return (
+              <Pressable
+                key={option.rating}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => setFeedback.mutate({ exerciseId: exercise.id, rating: option.rating })}
+                style={[styles.feedbackButton, active && styles.feedbackButtonActive]}
+              >
+                <Ionicons
+                  name={active ? option.iconActive : option.icon}
+                  size={18}
+                  color={active ? colors.primary : colors.textMuted}
+                />
+                <Text style={[styles.feedbackLabel, active && styles.feedbackLabelActive]}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       </Card>
 
@@ -79,9 +95,14 @@ export default function ExerciseDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  loading: {
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+  },
   media: {
     width: '100%',
-    height: 240,
+    aspectRatio: 16 / 10,
+    maxHeight: 380,
     borderRadius: radii.lg,
     backgroundColor: colors.surfaceAlt,
   },
@@ -104,14 +125,24 @@ const styles = StyleSheet.create({
   },
   feedbackButton: {
     flex: 1,
-    textAlign: 'center',
-    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 44,
     borderRadius: radii.md,
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
+    cursor: 'pointer',
+  },
+  feedbackLabel: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  feedbackLabelActive: {
     color: colors.text,
-    overflow: 'hidden',
   },
   feedbackButtonActive: {
     backgroundColor: colors.primaryMuted,
@@ -122,6 +153,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     marginBottom: spacing.sm,
+  },
+  cardHint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -spacing.xs,
   },
   bodyText: {
     color: colors.textMuted,

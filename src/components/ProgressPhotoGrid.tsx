@@ -2,11 +2,16 @@ import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { getProgressPhotoUrl } from '@/api/measurements';
 import type { ProgressPhoto } from '@/types/database';
+import { formatDay } from '@/lib/format';
 import { colors, radii, spacing } from '@/constants/theme';
 
 export function ProgressPhotoGrid({ photos }: { photos: ProgressPhoto[] }) {
   if (!photos.length) {
-    return <Text style={styles.emptyText}>No progress photos yet.</Text>;
+    return (
+      <Text style={styles.emptyText}>
+        No photos yet. A photo every few weeks makes changes the scale misses easy to see.
+      </Text>
+    );
   }
 
   return (
@@ -34,7 +39,7 @@ function ProgressPhotoThumbnail({ photo }: { photo: ProgressPhoto }) {
   return (
     <View style={styles.thumbnailWrapper}>
       {url ? <Image source={{ uri: url }} style={styles.thumbnail} /> : <View style={styles.thumbnail} />}
-      <Text style={styles.dateLabel}>{photo.date}</Text>
+      <Text style={styles.dateLabel}>{formatDay(`${photo.date}T12:00:00`)}</Text>
     </View>
   );
 }
@@ -63,5 +68,6 @@ const styles = StyleSheet.create({
   emptyText: {
     color: colors.textMuted,
     fontSize: 14,
+    lineHeight: 20,
   },
 });

@@ -1,40 +1,61 @@
 import { useState, type ReactNode } from 'react';
-import { Dimensions, Keyboard, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  FadeIn,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Card } from '@/components/ui/Card';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
-import { LogoMark } from '@/components/ui/Logo';
+import { Logo } from '@/components/ui/Logo';
+import { OptionCard } from '@/components/ui/OptionCard';
+import { Chip, ChipGroup } from '@/components/ui/Chip';
+import { PhotoBackdrop } from '@/components/ui/PhotoBackdrop';
 import { OnboardingProgressBar } from '@/components/OnboardingProgressBar';
-import { OnboardingIllustration, type OnboardingIllustrationName } from '@/components/OnboardingIllustration';
-import { saveAnthropicApiKey } from '@/api/anthropicKey';
+import { HERO_IMAGE, ONBOARDING_IMAGES, type OnboardingImageName } from '@/constants/images';
+import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
+import { saveAiKey } from '@/api/aiKeys';
+import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
 import { addMeasurement } from '@/api/measurements';
 import { useCompleteOnboarding, useUpsertUserProfile } from '@/hooks/useUserProfile';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { useIsDesktopWeb, useIsMobileWeb, DESKTOP_CONTENT_MAX_WIDTH } from '@/hooks/useResponsive';
-import type { ExperienceLevel, Gender, Goal, PlanRefreshCadence, UnitSystem } from '@/types/database';
-import { colors, radii, spacing } from '@/constants/theme';
+import { useIsDesktopWeb } from '@/hooks/useResponsive';
+import { ApiError } from '@/lib/apiClient';
+import type { AIProvider, ExperienceLevel, Gender, Goal, PlanRefreshCadence, UnitSystem } from '@/types/database';
+import { colors, spacing } from '@/constants/theme';
 
-const GOALS: { value: Goal; label: string }[] = [
-  { value: 'strength', label: 'Strength' },
-  { value: 'hypertrophy', label: 'Hypertrophy' },
-  { value: 'general_fitness', label: 'General fitness' },
-  { value: 'endurance', label: 'Endurance' },
+const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
+  { value: 'metric', label: 'Metric', description: 'Kilograms and centimetres' },
+  { value: 'imperial', label: 'Imperial', description: 'Pounds and inches' },
 ];
-const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
-  { value: 'beginner', label: 'Beginner' },
-  { value: 'intermediate', label: 'Intermediate' },
-  { value: 'advanced', label: 'Advanced' },
+const GOALS: { value: Goal; label: string; description: string }[] = [
+  { value: 'strength', label: 'Strength', description: 'Lift heavier — lower reps, longer rest' },
+  { value: 'hypertrophy', label: 'Build muscle', description: 'Size and shape — moderate reps, more volume' },
+  { value: 'general_fitness', label: 'General fitness', description: 'Feel fitter and move better day to day' },
+  { value: 'endurance', label: 'Endurance', description: 'Go longer and recover faster' },
 ];
-const EQUIPMENT_OPTIONS = ['Barbell', 'Dumbbell', 'Machine', 'Bodyweight', 'Kettlebell', 'Bands'];
+const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string; description: string }[] = [
+  { value: 'beginner', label: 'Beginner', description: 'New to lifting, or returning after a long break' },
+  { value: 'intermediate', label: 'Intermediate', description: 'Training consistently for 1–3 years' },
+  { value: 'advanced', label: 'Advanced', description: '3+ years, confident with heavy compound lifts' },
+];
 const PLAN_CADENCES: { value: PlanRefreshCadence; label: string }[] = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Every 2 weeks' },
@@ -47,7 +68,7 @@ const GENDERS: { value: Gender; label: string }[] = [
   { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ];
 
-const SWIPE_DISMISS_THRESHOLD = 80;
+const SWIPE_THRESHOLD = 80;
 
 interface OnboardingData {
   unitSystem: UnitSystem;
@@ -58,9 +79,9 @@ interface OnboardingData {
   goal: Goal | null;
   experienceLevel: ExperienceLevel | null;
   equipment: string[];
-  includeWarmup: boolean;
   planCadence: PlanRefreshCadence;
-  anthropicKey: string;
+  aiProvider: AIProvider;
+  aiKey: string;
 }
 
 const INITIAL_DATA: OnboardingData = {
@@ -72,181 +93,276 @@ const INITIAL_DATA: OnboardingData = {
   goal: null,
   experienceLevel: null,
   equipment: [],
-  includeWarmup: true,
   planCadence: 'weekly',
-  anthropicKey: '',
+  aiProvider: 'anthropic',
+  aiKey: '',
 };
 
 interface StepProps {
   data: OnboardingData;
   update: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void;
+  /** Two-column option grids on wide layouts. */
+  wide?: boolean;
 }
 
 interface OnboardingStep {
+  key: string;
   title: string;
   subtitle?: string;
-  illustration: OnboardingIllustrationName;
+  image: OnboardingImageName;
+  /** When true and nothing is filled in, the primary button reads "Skip for now". */
+  isSkippable?: (data: OnboardingData) => boolean;
   render: (props: StepProps) => ReactNode;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function OptionList({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  return <View style={[styles.optionList, wide && styles.optionGrid]}>{children}</View>;
+}
+
+function OptionCell({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  return <View style={wide ? styles.optionCellWide : undefined}>{children}</View>;
 }
 
 const STEPS: OnboardingStep[] = [
   {
+    key: 'units',
     title: 'Which units do you use?',
-    illustration: 'units',
-    render: ({ data, update }) => (
-      <ChoiceRow
-        options={[
-          { value: 'metric', label: 'Metric — kg / cm' },
-          { value: 'imperial', label: 'Imperial — lb / in' },
-        ]}
-        selected={[data.unitSystem]}
-        onSelect={(v) => update('unitSystem', v as UnitSystem)}
-      />
+    subtitle: 'Used for weights and body measurements everywhere in Forge.',
+    image: 'units',
+    render: ({ data, update, wide }) => (
+      <OptionList wide={wide}>
+        {UNIT_OPTIONS.map((option) => (
+          <OptionCell key={option.value} wide={wide}>
+            <OptionCard
+              label={option.label}
+              description={option.description}
+              selected={data.unitSystem === option.value}
+              onPress={() => update('unitSystem', option.value)}
+            />
+          </OptionCell>
+        ))}
+      </OptionList>
     ),
   },
   {
+    key: 'profile',
     title: 'A bit about you',
-    subtitle: "Optional — helps the AI set sensible starting weights. Skip anything you'd rather not share.",
-    illustration: 'profile',
-    render: ({ data, update }) => (
-      <View style={{ gap: spacing.lg }}>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.fieldLabel}>Gender</Text>
-          <ChoiceRow
-            options={GENDERS}
-            selected={data.gender ? [data.gender] : []}
-            onSelect={(v) => update('gender', v as Gender)}
-          />
-        </View>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.fieldLabel}>Birth year</Text>
-          <TextField
-            placeholder="e.g. 1995"
-            keyboardType="number-pad"
-            value={data.birthYear}
-            onChangeText={(v) => update('birthYear', v)}
-          />
-        </View>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.fieldLabel}>Height ({data.unitSystem === 'imperial' ? 'inches' : 'cm'})</Text>
-          <TextField
-            placeholder={data.unitSystem === 'imperial' ? 'e.g. 68' : 'e.g. 173'}
-            keyboardType="decimal-pad"
-            value={data.height}
-            onChangeText={(v) => update('height', v)}
-          />
-        </View>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.fieldLabel}>Current weight ({data.unitSystem === 'imperial' ? 'lb' : 'kg'})</Text>
-          <TextField
-            placeholder={data.unitSystem === 'imperial' ? 'e.g. 154' : 'e.g. 70'}
-            keyboardType="decimal-pad"
-            value={data.startingWeight}
-            onChangeText={(v) => update('startingWeight', v)}
-          />
+    subtitle: "Optional — helps set sensible starting weights. Skip anything you'd rather not share.",
+    image: 'profile',
+    isSkippable: (d) => !d.gender && !d.birthYear && !d.height && !d.startingWeight,
+    render: ({ data, update, wide }) => (
+      <View style={styles.fieldStack}>
+        <Field label="Gender">
+          <ChipGroup>
+            {GENDERS.map((g) => (
+              <Chip
+                key={g.value}
+                label={g.label}
+                selected={data.gender === g.value}
+                onPress={() => update('gender', data.gender === g.value ? null : g.value)}
+              />
+            ))}
+          </ChipGroup>
+        </Field>
+        <View style={[styles.fieldRow, !wide && styles.fieldRowNarrow]}>
+          <View style={styles.fieldRowItem}>
+            <Field label="Birth year">
+              <TextField
+                placeholder="1995"
+                keyboardType="number-pad"
+                maxLength={4}
+                value={data.birthYear}
+                onChangeText={(v) => update('birthYear', v.replace(/\D/g, ''))}
+              />
+            </Field>
+          </View>
+          <View style={styles.fieldRowItem}>
+            <Field label={`Height (${data.unitSystem === 'imperial' ? 'in' : 'cm'})`}>
+              <TextField
+                placeholder={data.unitSystem === 'imperial' ? '68' : '173'}
+                keyboardType="decimal-pad"
+                value={data.height}
+                onChangeText={(v) => update('height', v)}
+              />
+            </Field>
+          </View>
+          <View style={styles.fieldRowItem}>
+            <Field label={`Weight (${data.unitSystem === 'imperial' ? 'lb' : 'kg'})`}>
+              <TextField
+                placeholder={data.unitSystem === 'imperial' ? '154' : '70'}
+                keyboardType="decimal-pad"
+                value={data.startingWeight}
+                onChangeText={(v) => update('startingWeight', v)}
+              />
+            </Field>
+          </View>
         </View>
       </View>
     ),
   },
   {
+    key: 'goal',
     title: "What's your main goal?",
-    illustration: 'goal',
-    render: ({ data, update }) => (
-      <ChoiceRow options={GOALS} selected={data.goal ? [data.goal] : []} onSelect={(v) => update('goal', v as Goal)} />
+    subtitle: 'Your plans are built around this. You can change it any time.',
+    image: 'goal',
+    isSkippable: (d) => !d.goal,
+    render: ({ data, update, wide }) => (
+      <OptionList wide={wide}>
+        {GOALS.map((option) => (
+          <OptionCell key={option.value} wide={wide}>
+            <OptionCard
+              label={option.label}
+              description={option.description}
+              selected={data.goal === option.value}
+              onPress={() => update('goal', option.value)}
+            />
+          </OptionCell>
+        ))}
+      </OptionList>
     ),
   },
   {
+    key: 'experience',
     title: 'How experienced are you?',
-    illustration: 'experience',
-    render: ({ data, update }) => (
-      <ChoiceRow
-        options={EXPERIENCE_LEVELS}
-        selected={data.experienceLevel ? [data.experienceLevel] : []}
-        onSelect={(v) => update('experienceLevel', v as ExperienceLevel)}
-      />
+    subtitle: 'So your first plan starts at the right volume.',
+    image: 'experience',
+    isSkippable: (d) => !d.experienceLevel,
+    render: ({ data, update, wide }) => (
+      <OptionList wide={wide}>
+        {EXPERIENCE_LEVELS.map((option) => (
+          <OptionCell key={option.value} wide={wide}>
+            <OptionCard
+              label={option.label}
+              description={option.description}
+              selected={data.experienceLevel === option.value}
+              onPress={() => update('experienceLevel', option.value)}
+            />
+          </OptionCell>
+        ))}
+      </OptionList>
     ),
   },
   {
+    key: 'equipment',
     title: 'What equipment do you have?',
-    subtitle: 'Pick as many as apply.',
-    illustration: 'equipment',
+    subtitle: 'Pick all that apply — plans only use what you can actually get to.',
+    image: 'equipment',
+    isSkippable: (d) => d.equipment.length === 0,
     render: ({ data, update }) => (
-      <ChoiceRow
-        options={EQUIPMENT_OPTIONS.map((e) => ({ value: e.toLowerCase(), label: e }))}
-        selected={data.equipment}
-        multi
-        onSelect={(v) =>
-          update('equipment', data.equipment.includes(v) ? data.equipment.filter((e) => e !== v) : [...data.equipment, v])
-        }
-      />
+      <OptionList wide>
+        {EQUIPMENT_OPTIONS.map(({ value, label }) => {
+          const selected = data.equipment.includes(value);
+          return (
+            <OptionCell key={value} wide>
+              <OptionCard
+                multi
+                label={label}
+                selected={selected}
+                onPress={() =>
+                  update('equipment', selected ? data.equipment.filter((e) => e !== value) : [...data.equipment, value])
+                }
+              />
+            </OptionCell>
+          );
+        })}
+      </OptionList>
     ),
   },
   {
-    title: 'How should your plans work?',
-    illustration: 'schedule',
+    key: 'schedule',
+    title: 'How often do you want a fresh plan?',
+    subtitle: "We'll remind you to regenerate it — plans are never replaced without you asking.",
+    image: 'schedule',
     render: ({ data, update }) => (
-      <View style={{ gap: spacing.lg }}>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.fieldLabel}>Warm-ups</Text>
-          <ChoiceRow
-            options={[
-              { value: 'yes', label: 'Include a warm-up' },
-              { value: 'no', label: 'Skip warm-ups' },
-            ]}
-            selected={[data.includeWarmup ? 'yes' : 'no']}
-            onSelect={(v) => update('includeWarmup', v === 'yes')}
-          />
-        </View>
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.fieldLabel}>Remind me to refresh my plan</Text>
-          <ChoiceRow
-            options={PLAN_CADENCES}
-            selected={[data.planCadence]}
-            onSelect={(v) => update('planCadence', v as PlanRefreshCadence)}
-          />
-        </View>
+      <View style={styles.fieldStack}>
+        <Field label="Remind me every">
+          <ChipGroup>
+            {PLAN_CADENCES.map((c) => (
+              <Chip
+                key={c.value}
+                label={c.label}
+                selected={data.planCadence === c.value}
+                onPress={() => update('planCadence', c.value)}
+              />
+            ))}
+          </ChipGroup>
+        </Field>
       </View>
     ),
   },
   {
-    title: 'Use your own Anthropic key?',
+    key: 'ai',
+    title: 'Which AI should build your plans?',
     subtitle:
-      "Optional. If you add one, plan generation is billed to your own account instead of the app's shared key. You can add this later in Settings.",
-    illustration: 'ai',
-    render: ({ data, update }) => (
-      <TextField
-        placeholder="sk-ant-..."
-        autoCapitalize="none"
-        secureTextEntry
-        value={data.anthropicKey}
-        onChangeText={(v) => update('anthropicKey', v)}
-      />
-    ),
+      "Pick a provider. Optionally add your own API key so plan generation is billed to your account instead of the app's shared key — you can do this later in Settings.",
+    image: 'ai',
+    isSkippable: (d) => !d.aiKey.trim(),
+    render: ({ data, update, wide }) => {
+      const provider = providerInfo(data.aiProvider);
+      return (
+        <View style={styles.fieldStack}>
+          <OptionList wide={wide}>
+            {AI_PROVIDERS.map((p) => (
+              <OptionCell key={p.value} wide={wide}>
+                <OptionCard
+                  label={p.name}
+                  description={`by ${p.company}`}
+                  selected={data.aiProvider === p.value}
+                  onPress={() => update('aiProvider', p.value)}
+                />
+              </OptionCell>
+            ))}
+          </OptionList>
+          <Field label={`Your ${provider.name} API key (optional)`}>
+            <TextField
+              placeholder={provider.keyPlaceholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              value={data.aiKey}
+              onChangeText={(v) => update('aiKey', v)}
+            />
+            <Text style={styles.hint}>{provider.keyHelp}</Text>
+          </Field>
+        </View>
+      );
+    },
   },
 ];
 
 export default function OnboardingScreen() {
   const userId = useAuthStore((s) => s.session?.userId);
+  const username = useAuthStore((s) => s.session?.username);
   const upsertProfile = useUpsertUserProfile();
   const completeOnboarding = useCompleteOnboarding();
   const isDesktopWeb = useIsDesktopWeb();
-  const isMobileWeb = useIsMobileWeb();
 
   const [data, setData] = useState<OnboardingData>(INITIAL_DATA);
   const [finishing, setFinishing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   function update<K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) {
     setData((prev) => ({ ...prev, [key]: value }));
   }
 
   async function handleFinish() {
+    setErrorMessage(null);
     setFinishing(true);
     try {
-      if (data.anthropicKey.trim()) {
+      if (data.aiKey.trim()) {
         try {
-          await saveAnthropicApiKey(data.anthropicKey.trim());
+          await saveAiKey(data.aiProvider, data.aiKey.trim());
         } catch {
-          // Non-fatal — user can retry from Settings later.
+          // Non-fatal — the key can be re-entered from Settings.
         }
       }
 
@@ -266,8 +382,8 @@ export default function OnboardingScreen() {
         goal: data.goal,
         experience_level: data.experienceLevel,
         equipment_access: data.equipment,
-        include_warmup: data.includeWarmup,
         plan_refresh_cadence: data.planCadence,
+        ai_provider: data.aiProvider,
       });
 
       const parsedWeight = parseFloat(data.startingWeight);
@@ -280,50 +396,49 @@ export default function OnboardingScreen() {
         });
       }
 
+      // Flipping onboarded_at makes the root layout route to Home.
       await completeOnboarding.mutateAsync();
+    } catch (err) {
+      setErrorMessage(
+        err instanceof ApiError ? err.message : "Couldn't save your preferences. Check your connection and try again."
+      );
     } finally {
       setFinishing(false);
     }
   }
 
-  if (isDesktopWeb) {
-    return <DesktopOnboardingForm data={data} update={update} finishing={finishing} onFinish={handleFinish} />;
-  }
-
-  return (
-    <MobileOnboardingWizard
-      data={data}
-      update={update}
-      finishing={finishing}
-      onFinish={handleFinish}
-      showIllustration={isMobileWeb}
-    />
-  );
+  const shared = { data, update, finishing, onFinish: handleFinish, username, errorMessage };
+  return isDesktopWeb ? <DesktopOnboarding {...shared} /> : <MobileOnboarding {...shared} />;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Mobile (native + mobile web): one question per screen, swipeable.
-// ─────────────────────────────────────────────────────────────────────────
-
-function MobileOnboardingWizard({
-  data,
-  update,
-  finishing,
-  onFinish,
-  showIllustration,
-}: {
+interface LayoutProps {
   data: OnboardingData;
   update: StepProps['update'];
   finishing: boolean;
   onFinish: () => void;
-  showIllustration: boolean;
-}) {
+  username?: string;
+  errorMessage: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phone (native + mobile web): one question per screen, photo hero on top,
+// swipe or tap to move between steps.
+// ─────────────────────────────────────────────────────────────────────────
+
+function MobileOnboarding({ data, update, finishing, onFinish, username, errorMessage }: LayoutProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const translateX = useSharedValue(0);
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const screenWidth = Dimensions.get('window').width;
 
+  const step = STEPS[stepIndex];
   const isFirstStep = stepIndex === 0;
   const isLastStep = stepIndex === STEPS.length - 1;
+  const skippable = step.isSkippable?.(data) ?? false;
+  const heroHeight = Math.min(Math.max(windowHeight * 0.36, 210), 340) + insets.top;
+
+  const primaryLabel = isLastStep ? (skippable ? 'Skip and finish' : 'Finish setup') : skippable ? 'Skip for now' : 'Continue';
 
   function goNext() {
     Keyboard.dismiss();
@@ -341,20 +456,20 @@ function MobileOnboardingWizard({
 
   const panGesture = Gesture.Pan()
     .activeOffsetX([-20, 20])
+    .failOffsetY([-15, 15])
     .onUpdate((event) => {
-      // Resist swiping past the first/last step instead of hard-blocking, so
-      // the gesture still feels responsive at the edges.
+      // Rubber-band at the ends instead of hard-blocking, so the gesture still feels alive.
       const atEdge = (event.translationX > 0 && isFirstStep) || (event.translationX < 0 && isLastStep);
       translateX.value = atEdge ? event.translationX * 0.25 : event.translationX;
     })
     .onEnd((event) => {
-      if (event.translationX < -SWIPE_DISMISS_THRESHOLD && !isLastStep) {
-        translateX.value = withTiming(-screenWidth, { duration: 200 }, () => {
+      if (event.translationX < -SWIPE_THRESHOLD && !isLastStep) {
+        translateX.value = withTiming(-screenWidth, { duration: 180 }, () => {
           translateX.value = 0;
           runOnJS(setStepIndex)(Math.min(stepIndex + 1, STEPS.length - 1));
         });
-      } else if (event.translationX > SWIPE_DISMISS_THRESHOLD && !isFirstStep) {
-        translateX.value = withTiming(screenWidth, { duration: 200 }, () => {
+      } else if (event.translationX > SWIPE_THRESHOLD && !isFirstStep) {
+        translateX.value = withTiming(screenWidth, { duration: 180 }, () => {
           translateX.value = 0;
           runOnJS(setStepIndex)(Math.max(stepIndex - 1, 0));
         });
@@ -363,204 +478,249 @@ function MobileOnboardingWizard({
       }
     });
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  const step = STEPS[stepIndex];
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <View style={styles.wrapper}>
-        <View style={styles.progressRow}>
-          <OnboardingProgressBar step={stepIndex} totalSteps={STEPS.length} />
-        </View>
-
+    <View style={styles.mobileRoot}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <GestureDetector gesture={panGesture}>
-          <Animated.View style={[styles.stepContainer, animatedStyle]}>
-            {showIllustration ? (
-              <View style={styles.illustrationWrap}>
-                <OnboardingIllustration name={step.illustration} size={88} />
+          <Animated.View style={[styles.flex, animatedStyle]}>
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.mobileScroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Animated.View key={step.key} entering={FadeIn.duration(250)}>
+                <PhotoBackdrop source={ONBOARDING_IMAGES[step.image]} style={{ height: heroHeight }} />
+              </Animated.View>
+
+              <View style={styles.mobileContent}>
+                {isFirstStep && username ? <Text style={styles.greeting}>Welcome, {username} 👋</Text> : null}
+                <Text style={styles.title}>{step.title}</Text>
+                {step.subtitle ? <Text style={styles.subtitle}>{step.subtitle}</Text> : null}
+                <View style={styles.stepBody}>{step.render({ data, update })}</View>
               </View>
-            ) : null}
-            <Text style={styles.title}>{step.title}</Text>
-            {step.subtitle ? <Text style={styles.subtitle}>{step.subtitle}</Text> : null}
-            <Card style={styles.stepCard}>{step.render({ data, update })}</Card>
+            </ScrollView>
           </Animated.View>
         </GestureDetector>
 
-        <View style={styles.footer}>
-          <View style={styles.footerRow}>
-            {!isFirstStep ? (
-              <View style={styles.footerButton}>
-                <Button label="Back" variant="secondary" onPress={goBack} />
-              </View>
-            ) : (
-              <View style={styles.footerButton} />
-            )}
-            <View style={styles.footerButton}>
-              <Button label={isLastStep ? 'Get started' : 'Next'} onPress={goNext} loading={finishing} />
-            </View>
+        {/* Floating top bar over the photo: back + progress */}
+        <View style={[styles.topBar, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
+          {isFirstStep ? (
+            <View style={styles.backButtonPlaceholder} />
+          ) : (
+            <Pressable
+              onPress={goBack}
+              accessibilityRole="button"
+              accessibilityLabel="Previous step"
+              hitSlop={10}
+              style={styles.backButton}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+          )}
+          <View style={styles.progressWrap}>
+            <OnboardingProgressBar step={stepIndex} totalSteps={STEPS.length} />
           </View>
-        </View>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Desktop web: one continuous scrollable form, split-panel layout matching
-// the sign-in screen (brand panel + form panel), all sections stacked.
-// ─────────────────────────────────────────────────────────────────────────
-
-function DesktopOnboardingForm({
-  data,
-  update,
-  finishing,
-  onFinish,
-}: {
-  data: OnboardingData;
-  update: StepProps['update'];
-  finishing: boolean;
-  onFinish: () => void;
-}) {
-  return (
-    <View style={styles.splitRoot}>
-      <View style={styles.splitPanel}>
-        <LogoMark size={40} />
-        <View style={styles.splitCopy}>
-          <Text style={styles.splitHeadline}>Let's set up your training.</Text>
-          <Text style={styles.splitBody}>
-            A few quick preferences now — goal, experience, equipment — so every plan Forge generates fits how
-            you actually train. Everything here can be changed later in Settings.
+          <Text style={styles.stepCount}>
+            {stepIndex + 1}/{STEPS.length}
           </Text>
         </View>
-        <Text style={styles.splitFooter}>Forge — your training, compounding.</Text>
-      </View>
 
-      <ScrollView style={styles.formPanel} contentContainerStyle={styles.formPanelContent}>
-        <View style={styles.desktopForm}>
-          {STEPS.map((step, index) => (
-            <View key={step.title} style={styles.desktopSection}>
-              <Text style={styles.desktopSectionEyebrow}>
-                {index + 1} of {STEPS.length}
-              </Text>
-              <Text style={styles.desktopSectionTitle}>{step.title}</Text>
-              {step.subtitle ? <Text style={styles.subtitle}>{step.subtitle}</Text> : null}
-              <Card style={styles.stepCard}>{step.render({ data, update })}</Card>
-            </View>
-          ))}
-
-          <Button label="Get started" onPress={onFinish} loading={finishing} />
-        </View>
-      </ScrollView>
+        <SafeAreaView edges={['bottom']} style={styles.mobileFooter}>
+          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+          <Button
+            label={primaryLabel}
+            variant={skippable ? 'secondary' : 'primary'}
+            onPress={goNext}
+            loading={finishing}
+          />
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
-function ChoiceRow({
-  options,
-  selected,
-  onSelect,
-  multi = false,
-}: {
-  options: { value: string; label: string }[];
-  selected: string[];
-  onSelect: (value: string) => void;
-  multi?: boolean;
-}) {
+// ─────────────────────────────────────────────────────────────────────────
+// Desktop web: photo brand panel + one scrollable form with every section,
+// and a pinned footer so "Finish setup" is always reachable.
+// ─────────────────────────────────────────────────────────────────────────
+
+function DesktopOnboarding({ data, update, finishing, onFinish, username, errorMessage }: LayoutProps) {
   return (
-    <View style={styles.chipsRow}>
-      {options.map((option) => {
-        const active = selected.includes(option.value);
-        return (
-          <Text
-            key={option.value}
-            onPress={() => onSelect(option.value)}
-            style={[styles.chip, active && styles.chipActive]}
-          >
-            {multi && active ? '✓ ' : ''}
-            {option.label}
-          </Text>
-        );
-      })}
+    <View style={styles.splitRoot}>
+      <PhotoBackdrop source={HERO_IMAGE} fade="full" style={styles.splitPanel}>
+        <View style={styles.splitInner}>
+          <Logo size={30} textSize={22} />
+          <View style={styles.splitCopy}>
+            <Text style={styles.splitHeadline}>
+              {username ? `Welcome, ${username}.\nLet's tailor Forge to you.` : "Let's tailor Forge to you."}
+            </Text>
+            <Text style={styles.splitBody}>
+              A few quick preferences so every plan fits how you actually train. Takes about a minute, and everything
+              can be changed later in Settings.
+            </Text>
+          </View>
+        </View>
+      </PhotoBackdrop>
+
+      <View style={styles.formPanel}>
+        <ScrollView contentContainerStyle={styles.formPanelContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.desktopForm}>
+            {STEPS.map((step, index) => (
+              <View key={step.key} style={styles.desktopSection}>
+                <View style={styles.desktopSectionHead}>
+                  <View style={styles.stepBadge}>
+                    <Text style={styles.stepBadgeText}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={styles.desktopSectionTitle}>{step.title}</Text>
+                    {step.subtitle ? <Text style={styles.subtitle}>{step.subtitle}</Text> : null}
+                  </View>
+                </View>
+                <View style={styles.desktopSectionBody}>{step.render({ data, update, wide: true })}</View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        <View style={styles.desktopFooter}>
+          <View style={styles.desktopFooterInner}>
+            {errorMessage ? <Text style={[styles.error, styles.flex]}>{errorMessage}</Text> : <View style={styles.flex} />}
+            <View style={styles.desktopFinish}>
+              <Button label="Finish setup" onPress={onFinish} loading={finishing} />
+            </View>
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  flex: {
+    flex: 1,
+  },
+
+  // ── Phone ──
+  mobileRoot: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  wrapper: {
-    flex: 1,
-    padding: spacing.md,
-    justifyContent: 'space-between',
+  mobileScroll: {
+    paddingBottom: spacing.lg,
   },
-  progressRow: {
-    marginBottom: spacing.lg,
-  },
-  stepContainer: {
-    flex: 1,
+  mobileContent: {
+    paddingHorizontal: spacing.lg,
+    marginTop: -spacing.lg,
     gap: spacing.sm,
   },
-  illustrationWrap: {
+  topBar: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(11,14,17,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonPlaceholder: {
+    width: 36,
+    height: 36,
+  },
+  progressWrap: {
+    flex: 1,
+  },
+  stepCount: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+    minWidth: 28,
+    textAlign: 'right',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 4,
+  },
+  greeting: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
   },
   title: {
     color: colors.text,
     fontSize: 26,
     fontWeight: '800',
+    lineHeight: 32,
   },
   subtitle: {
     color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: spacing.xs,
   },
-  stepCard: {
-    marginTop: spacing.sm,
+  stepBody: {
+    marginTop: spacing.md,
+  },
+  mobileFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  error: {
+    color: colors.danger,
+    fontSize: 14,
+  },
+
+  // ── Shared step content ──
+  optionList: {
+    gap: spacing.sm,
+  },
+  optionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  optionCellWide: {
+    flexBasis: '48%',
+    flexGrow: 1,
+  },
+  fieldStack: {
+    gap: spacing.lg,
+  },
+  field: {
+    gap: spacing.sm,
   },
   fieldLabel: {
     color: colors.textMuted,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  chipsRow: {
+  fieldRow: {
     flexDirection: 'row',
+    gap: spacing.md,
+  },
+  fieldRowNarrow: {
     flexWrap: 'wrap',
-    gap: spacing.xs,
   },
-  chip: {
+  fieldRowItem: {
+    flexGrow: 1,
+    flexBasis: 96,
+  },
+  hint: {
     color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    overflow: 'hidden',
-  },
-  chipActive: {
-    color: '#fff',
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  footer: {
-    paddingTop: spacing.md,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  footerButton: {
-    flex: 1,
+    fontSize: 13,
   },
 
-  // Desktop split layout — mirrors app/(auth)/sign-in.tsx
+  // ── Desktop ──
   splitRoot: {
     flex: 1,
     flexDirection: 'row',
@@ -568,11 +728,13 @@ const styles = StyleSheet.create({
   },
   splitPanel: {
     flex: 1,
-    backgroundColor: colors.surface,
+    maxWidth: 560,
     borderRightWidth: 1,
     borderRightColor: colors.border,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xl,
+  },
+  splitInner: {
+    flex: 1,
+    padding: spacing.xl,
     justifyContent: 'space-between',
   },
   splitCopy: {
@@ -582,41 +744,76 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 34,
     fontWeight: '800',
-    lineHeight: 40,
+    lineHeight: 42,
   },
   splitBody: {
-    color: colors.textMuted,
+    color: colors.text,
+    opacity: 0.85,
     fontSize: 16,
     lineHeight: 24,
-    maxWidth: 380,
-  },
-  splitFooter: {
-    color: colors.textMuted,
-    fontSize: 13,
+    maxWidth: 400,
   },
   formPanel: {
-    flex: 1,
+    flex: 1.4,
   },
   formPanelContent: {
     alignItems: 'center',
-    padding: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
   },
   desktopForm: {
     width: '100%',
-    maxWidth: DESKTOP_CONTENT_MAX_WIDTH,
-    gap: spacing.xl,
+    maxWidth: 680,
+    gap: spacing.xl + spacing.sm,
   },
   desktopSection: {
-    gap: spacing.xs,
+    gap: spacing.md,
   },
-  desktopSectionEyebrow: {
+  desktopSectionHead: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'flex-start',
+  },
+  desktopSectionBody: {
+    paddingLeft: 44,
+  },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primaryMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  stepBadgeText: {
     color: colors.primary,
-    fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 13,
   },
   desktopSectionTitle: {
     color: colors.text,
     fontSize: 20,
     fontWeight: '800',
+    marginBottom: 2,
+  },
+  desktopFooter: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+  },
+  desktopFooterInner: {
+    width: '100%',
+    maxWidth: 680,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  desktopFinish: {
+    width: 200,
   },
 });
+

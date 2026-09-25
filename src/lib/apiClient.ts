@@ -37,7 +37,12 @@ async function refreshAccessToken(): Promise<boolean> {
         if (!res.ok) return false;
 
         const data = await res.json();
-        const newSession = { userId: data.user_id, accessToken: data.access_token, refreshToken: data.refresh_token };
+        const newSession = {
+          userId: data.user_id,
+          username: data.username,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+        };
         await saveSession(newSession);
         useAuthStore.getState().setSession(newSession);
         return true;
@@ -56,7 +61,7 @@ interface RequestOptions {
   body?: unknown;
   /** Set true for multipart/form-data uploads — body is passed through as FormData, no JSON stringify/Content-Type. */
   isFormData?: boolean;
-  /** Skip attaching Authorization — only auth/sign-up and auth/sign-in need this. */
+  /** Skip attaching Authorization — needed for every unauthenticated auth/* route. */
   skipAuth?: boolean;
 }
 
@@ -89,11 +94,25 @@ async function request<T>(path: string, options: RequestOptions = {}, isRetry = 
   const data = contentType.includes('application/json') ? await res.json() : await res.text();
 
   if (!res.ok) {
-    const message = typeof data === 'object' && data !== null && 'detail' in data ? String(data.detail) : String(data);
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, errorMessageFrom(data));
   }
 
   return data as T;
+}
+
+/**
+ * FastAPI errors are { detail: string } for HTTPException, but
+ * { detail: [{ msg, loc, ... }] } for request-validation (422) failures —
+ * surface the first validation message rather than "[object Object]".
+ */
+function errorMessageFrom(data: unknown): string {
+  if (typeof data !== 'object' || data === null || !('detail' in data)) return String(data);
+  const detail = (data as { detail: unknown }).detail;
+  if (Array.isArray(detail)) {
+    const first = detail[0] as { msg?: string } | undefined;
+    return (first?.msg ?? 'Invalid request').replace(/^Value error, /, '');
+  }
+  return String(detail);
 }
 
 export const apiClient = {

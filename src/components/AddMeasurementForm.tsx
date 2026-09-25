@@ -38,13 +38,15 @@ export function AddMeasurementForm({ type, onDone }: { type: MeasurementType; on
     <View style={styles.row}>
       <View style={styles.input}>
         <TextField
-          placeholder={`New ${type.replace(/_/g, ' ')} value`}
+          placeholder={`Value in ${defaultUnitFor(type, unitSystem)}`}
+          returnKeyType="done"
+          onSubmitEditing={handleSubmit}
           keyboardType="decimal-pad"
           value={value}
           onChangeText={setValue}
         />
       </View>
-      <Button label="Add" onPress={handleSubmit} loading={addMeasurement.isPending} />
+      <Button label="Add" onPress={handleSubmit} loading={addMeasurement.isPending} disabled={!value.trim()} />
     </View>
   );
 }

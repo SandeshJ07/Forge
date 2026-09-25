@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Chip, ChipScroller } from '@/components/ui/Chip';
+import { humanize } from '@/lib/format';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { MeasurementChart } from '@/components/MeasurementChart';
@@ -24,26 +27,25 @@ export default function MeasurementsScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.heading}>Measurements</Text>
+      <ScreenHeader title="Progress" subtitle="Body measurements and progress photos" />
 
-      <View style={styles.chipsRow}>
+      <ChipScroller>
         {allTypes.map((type) => (
-          <Text
+          <Chip
             key={type}
+            label={type === 'body_fat_pct' ? 'Body fat %' : humanize(type)}
+            selected={selectedType === type}
             onPress={() => setSelectedType(type)}
-            style={[styles.chip, selectedType === type && styles.chipActive]}
-          >
-            {type.replace(/_/g, ' ')}
-          </Text>
+          />
         ))}
-      </View>
+      </ChipScroller>
 
       <Card>
         <MeasurementChart measurements={measurements ?? []} unit={latestUnit} />
       </Card>
 
       <Card>
-        <Text style={styles.cardTitle}>Add entry</Text>
+        <Text style={styles.cardTitle}>Add today's {selectedType === 'body_fat_pct' ? 'body fat %' : humanize(selectedType).toLowerCase()}</Text>
         <AddMeasurementForm type={selectedType} />
       </Card>
 
@@ -64,33 +66,6 @@ export default function MeasurementsScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  chip: {
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    fontSize: 13,
-    textTransform: 'capitalize',
-    overflow: 'hidden',
-  },
-  chipActive: {
-    color: '#fff',
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
   cardTitle: {
     color: colors.text,
     fontSize: 16,

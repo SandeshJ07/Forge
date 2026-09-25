@@ -4,7 +4,7 @@ import { Platform, useWindowDimensions } from 'react-native';
 export const DESKTOP_BREAKPOINT = 900;
 
 /** Max width of the centered content column on desktop web. */
-export const DESKTOP_CONTENT_MAX_WIDTH = 720;
+export const DESKTOP_CONTENT_MAX_WIDTH = 880;
 
 /**
  * True only on web, at desktop-ish viewport widths. Mobile web and the native app

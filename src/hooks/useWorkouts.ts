@@ -8,12 +8,26 @@ import {
 } from '@/api/workouts';
 import type { Workout } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { fetchStatsOverview } from '@/api/stats';
 
 export function useRecentWorkouts() {
   const userId = useAuthStore((s) => s.session?.userId);
   return useQuery({
     queryKey: ['workouts', userId],
     queryFn: () => fetchRecentWorkouts(),
+    enabled: Boolean(userId),
+  });
+}
+
+/**
+ * Longer history for the streak calendar and best-streak stat. Keyed under
+ * ['workouts', userId] so logging or rating a workout refreshes it too.
+ */
+export function useWorkoutHistory() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  return useQuery({
+    queryKey: ['workouts', userId, 'history'],
+    queryFn: () => fetchRecentWorkouts(500),
     enabled: Boolean(userId),
   });
 }
@@ -34,6 +48,7 @@ export function useLogManualWorkout() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workouts', userId] });
       queryClient.invalidateQueries({ queryKey: ['personal-records', userId] });
+      queryClient.invalidateQueries({ queryKey: ['stats', userId] });
     },
   });
 }
@@ -52,5 +67,15 @@ export function useRateWorkout() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workouts', userId] });
     },
+  });
+}
+
+/** Motivational aggregates for Home (this vs last month, milestones, strength gains, lifetime totals). */
+export function useStatsOverview() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  return useQuery({
+    queryKey: ['stats', userId],
+    queryFn: fetchStatsOverview,
+    enabled: Boolean(userId),
   });
 }

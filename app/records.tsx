@@ -10,17 +10,14 @@ export default function RecordsScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.heading}>Personal records</Text>
-      <Text style={styles.subheading}>
-        Heaviest weight logged per exercise, from manual entries and synced workouts.
-      </Text>
+      <Text style={styles.subheading}>Your heaviest logged set for each exercise.</Text>
 
       <Card>
         {(records ?? []).map((record) => (
           <PersonalRecordRow key={record.exercise_id} record={record} />
         ))}
         {!isLoading && !records?.length ? (
-          <Text style={styles.emptyText}>No records yet — log a workout with weights to get started.</Text>
+          <Text style={styles.emptyText}>No records yet — log a set with weight and your best lifts will show up here.</Text>
         ) : null}
       </Card>
     </ScreenContainer>
@@ -28,11 +25,6 @@ export default function RecordsScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
-  },
   subheading: {
     color: colors.textMuted,
     fontSize: 14,

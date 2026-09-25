@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export interface Session {
   userId: string;
+  username: string;
   accessToken: string;
   refreshToken: string;
 }

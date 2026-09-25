@@ -1,5 +1,7 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { Exercise, ExerciseFeedbackRating } from '@/types/database';
+import { humanize } from '@/lib/format';
 import { colors, radii, spacing } from '@/constants/theme';
 
 interface ExerciseListItemProps {
@@ -8,15 +10,10 @@ interface ExerciseListItemProps {
   onPress: () => void;
 }
 
-const FEEDBACK_ICON: Record<ExerciseFeedbackRating, string> = {
-  like: '👍',
-  dislike: '👎',
-  neutral: '',
-};
 
 export function ExerciseListItem({ exercise, feedback, onPress }: ExerciseListItemProps) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, styles.hoverable, pressed && styles.pressed]}>
       {exercise.media_url ? (
         <Image source={{ uri: exercise.media_url }} style={styles.thumbnail} />
       ) : (
@@ -27,12 +24,13 @@ export function ExerciseListItem({ exercise, feedback, onPress }: ExerciseListIt
           {exercise.name}
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
-          {exercise.muscle_groups.join(', ')} {exercise.equipment ? `· ${exercise.equipment}` : ''}
+          {exercise.muscle_groups.map(humanize).join(', ')}
+          {exercise.equipment ? ` · ${humanize(exercise.equipment)}` : ''}
         </Text>
       </View>
-      {feedback && feedback !== 'neutral' ? (
-        <Text style={styles.feedbackIcon}>{FEEDBACK_ICON[feedback]}</Text>
-      ) : null}
+      {feedback === 'like' ? <Ionicons name="thumbs-up" size={16} color={colors.success} /> : null}
+      {feedback === 'dislike' ? <Ionicons name="thumbs-down" size={16} color={colors.textMuted} /> : null}
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -48,6 +46,9 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  hoverable: {
+    cursor: 'pointer',
   },
   thumbnail: {
     width: 48,
@@ -71,9 +72,5 @@ const styles = StyleSheet.create({
   meta: {
     color: colors.textMuted,
     fontSize: 13,
-    textTransform: 'capitalize',
-  },
-  feedbackIcon: {
-    fontSize: 18,
   },
 });

@@ -4,8 +4,11 @@ import type { Workout, WorkoutSet } from '@/types/database';
 export interface ManualWorkoutInput {
   title: string;
   date: string;
+  /** Seconds from start to finish, for guided sessions. */
+  durationSeconds?: number;
   sets: {
-    exerciseId: string;
+    /** null for planned exercises with no glossary match — logged by name, no PR tracking. */
+    exerciseId: string | null;
     exerciseName: string;
     weightKg: number | null;
     reps: number | null;
@@ -24,6 +27,7 @@ export async function logManualWorkout(input: ManualWorkoutInput): Promise<LogMa
     {
       title: input.title,
       date: input.date,
+      duration_seconds: input.durationSeconds,
       sets: input.sets.map((set) => ({
         exercise_id: set.exerciseId,
         exercise_name: set.exerciseName,

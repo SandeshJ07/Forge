@@ -11,10 +11,11 @@ import {
 import type { ExerciseFeedbackRating } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
 
-export function useExercises(filters: ExerciseFilters) {
+export function useExercises(filters: ExerciseFilters, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['exercises', filters],
     queryFn: () => fetchExercises(filters),
+    enabled: options.enabled ?? true,
   });
 }
 

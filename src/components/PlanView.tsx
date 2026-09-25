@@ -1,8 +1,21 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import type { PlanPayload } from '@/types/database';
+import { Button } from '@/components/ui/Button';
 import { colors, radii, spacing } from '@/constants/theme';
 
-export function PlanView({ plan }: { plan: PlanPayload }) {
+interface PlanViewProps {
+  plan: PlanPayload;
+  /** Shows a per-group "Log this workout" button when provided. */
+  onStartDay?: (dayIndex: number) => void;
+  /** Label for that button, e.g. "Resume workout" while a session is running. */
+  startLabel?: (dayIndex: number) => string;
+}
+
+export function PlanView({ plan, onStartDay, startLabel }: PlanViewProps) {
+  const router = useRouter();
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{plan.title}</Text>
@@ -27,13 +40,32 @@ export function PlanView({ plan }: { plan: PlanPayload }) {
 
           {day.exercises.map((exercise, exerciseIndex) => (
             <View key={exerciseIndex} style={styles.exerciseRow}>
-              <Text style={styles.exerciseName}>{exercise.exercise_name}</Text>
+              <Pressable
+                disabled={!exercise.exercise_id}
+                accessibilityRole={exercise.exercise_id ? 'link' : undefined}
+                onPress={() => router.push(`/exercise/${exercise.exercise_id}`)}
+                style={[styles.exerciseHead, exercise.exercise_id ? styles.exerciseHeadLink : null]}
+              >
+                <Text style={styles.exerciseName}>{exercise.exercise_name}</Text>
+                {exercise.exercise_id ? <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} /> : null}
+              </Pressable>
               <Text style={styles.exerciseMeta}>
-                {exercise.sets} × {exercise.reps} · rest {exercise.rest_seconds}s
+                <Text style={styles.exerciseDose}>
+                  {exercise.sets} × {exercise.reps}
+                </Text>
+                {'  ·  '}rest {exercise.rest_seconds >= 60 && exercise.rest_seconds % 30 === 0
+                  ? `${exercise.rest_seconds / 60} min`
+                  : `${exercise.rest_seconds}s`}
               </Text>
               {exercise.notes ? <Text style={styles.exerciseNotes}>{exercise.notes}</Text> : null}
             </View>
           ))}
+
+          {onStartDay ? (
+            <View style={styles.startRow}>
+              <Button label={startLabel?.(index) ?? 'Log this workout'} onPress={() => onStartDay(index)} />
+            </View>
+          ) : null}
         </View>
       ))}
     </View>
@@ -91,15 +123,32 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
   },
+  startRow: {
+    marginTop: spacing.sm,
+  },
   exerciseRow: {
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
+    gap: 2,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   exerciseName: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
+    flexShrink: 1,
+  },
+  exerciseHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  exerciseHeadLink: {
+    cursor: 'pointer',
+  },
+  exerciseDose: {
+    color: colors.text,
+    fontWeight: '700',
   },
   exerciseMeta: {
     color: colors.textMuted,

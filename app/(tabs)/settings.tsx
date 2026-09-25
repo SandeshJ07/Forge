@@ -1,301 +1,460 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
-import { signOutAndReset } from '@/api/auth';
-import { clearAnthropicApiKey, saveAnthropicApiKey } from '@/api/anthropicKey';
-import { useQueryClient } from '@tanstack/react-query';
+import { Chip, ChipGroup } from '@/components/ui/Chip';
+import { signOutAndReset, updateUsername } from '@/api/auth';
+import { clearAiKey, saveAiKey } from '@/api/aiKeys';
+import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
+import type { AIProvider } from '@/types/database';
+import { ApiError } from '@/lib/apiClient';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { useUserProfile, useUpsertUserProfile } from '@/hooks/useUserProfile';
+import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
+import { InstallAppSheet } from '@/components/InstallAppSheet';
+import { useIsMobileWeb } from '@/hooks/useResponsive';
+import { usePwaInstall } from '@/lib/pwaInstall';
 import type { ExperienceLevel, Gender, Goal, PlanRefreshCadence, UnitSystem } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
-const GOALS: Goal[] = ['strength', 'hypertrophy', 'general_fitness', 'endurance'];
-const EXPERIENCE_LEVELS: ExperienceLevel[] = ['beginner', 'intermediate', 'advanced'];
-const PLAN_CADENCES: PlanRefreshCadence[] = ['weekly', 'biweekly', 'monthly'];
+const GOALS: { value: Goal; label: string }[] = [
+  { value: 'strength', label: 'Strength' },
+  { value: 'hypertrophy', label: 'Build muscle' },
+  { value: 'general_fitness', label: 'General fitness' },
+  { value: 'endurance', label: 'Endurance' },
+];
+const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
+  { value: 'beginner', label: 'Beginner' },
+  { value: 'intermediate', label: 'Intermediate' },
+  { value: 'advanced', label: 'Advanced' },
+];
+const PLAN_CADENCES: { value: PlanRefreshCadence; label: string }[] = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly' },
+];
 const GENDERS: { value: Gender; label: string }[] = [
   { value: 'female', label: 'Female' },
   { value: 'male', label: 'Male' },
   { value: 'other', label: 'Other' },
   { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ];
+const UNITS: { value: UnitSystem; label: string }[] = [
+  { value: 'metric', label: 'Metric (kg, cm)' },
+  { value: 'imperial', label: 'Imperial (lb, in)' },
+];
+
+type Message = { text: string; isError: boolean } | null;
 
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const { data: profile, refetch: refetchProfile } = useUserProfile();
   const upsertProfile = useUpsertUserProfile();
+  const username = useAuthStore((s) => s.session?.username ?? '');
+  const isMobileWeb = useIsMobileWeb();
+  const pwa = usePwaInstall();
+  const [installSheetOpen, setInstallSheetOpen] = useState(false);
 
-  const [anthropicKeyInput, setAnthropicKeyInput] = useState('');
-  const [anthropicSaving, setAnthropicSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  async function handleInstallApp() {
+    const outcome = pwa.method === 'prompt' ? await pwa.promptInstall() : 'unavailable';
+    if (outcome === 'unavailable') setInstallSheetOpen(true);
+  }
 
-  const [birthYearInput, setBirthYearInput] = useState(profile?.birth_year?.toString() ?? '');
-  const [heightInput, setHeightInput] = useState(
-    profile?.height_cm != null
-      ? profile.unit_system === 'imperial'
-        ? (profile.height_cm / 2.54).toFixed(0)
-        : profile.height_cm.toString()
-      : ''
-  );
+  const [usernameInput, setUsernameInput] = useState(username);
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameMessage, setUsernameMessage] = useState<Message>(null);
+
+  const [aiKeyInput, setAiKeyInput] = useState('');
+  const [aiKeySaving, setAiKeySaving] = useState(false);
+  const [aiMessage, setAiMessage] = useState<Message>(null);
+
+  const [birthYearInput, setBirthYearInput] = useState('');
+  const [heightInput, setHeightInput] = useState('');
+  const isImperial = profile?.unit_system === 'imperial';
+
+  // Inputs are seeded from data that loads asynchronously (session + profile),
+  // so keep them in sync once it arrives instead of freezing the first empty render.
+  useEffect(() => {
+    setUsernameInput(username);
+  }, [username]);
+
+  useEffect(() => {
+    if (!profile) return;
+    setBirthYearInput(profile.birth_year?.toString() ?? '');
+    setHeightInput(
+      profile.height_cm != null
+        ? isImperial
+          ? (Number(profile.height_cm) / 2.54).toFixed(0)
+          : String(Math.round(Number(profile.height_cm)))
+        : ''
+    );
+  }, [profile, isImperial]);
 
   function handleSaveAboutYou() {
     const parsedBirthYear = parseInt(birthYearInput, 10);
     const parsedHeight = parseFloat(heightInput);
-    const heightCm = Number.isFinite(parsedHeight)
-      ? profile?.unit_system === 'imperial'
-        ? parsedHeight * 2.54
-        : parsedHeight
-      : null;
     upsertProfile.mutate({
       birth_year: Number.isFinite(parsedBirthYear) ? parsedBirthYear : null,
-      height_cm: heightCm,
+      height_cm: Number.isFinite(parsedHeight) ? (isImperial ? parsedHeight * 2.54 : parsedHeight) : null,
     });
   }
 
-  async function handleSaveAnthropicKey() {
-    setErrorMessage(null);
-    setAnthropicSaving(true);
+  async function handleSaveUsername() {
+    setUsernameMessage(null);
+    setUsernameSaving(true);
     try {
-      await saveAnthropicApiKey(anthropicKeyInput.trim());
-      setAnthropicKeyInput('');
-      await refetchProfile();
+      await updateUsername(usernameInput.trim());
+      setUsernameMessage({ text: 'Username updated.', isError: false });
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Invalid Anthropic API key.');
+      setUsernameMessage({ text: err instanceof ApiError ? err.message : 'Could not update username.', isError: true });
     } finally {
-      setAnthropicSaving(false);
+      setUsernameSaving(false);
     }
   }
 
-  async function handleClearAnthropicKey() {
-    await clearAnthropicApiKey();
+  const provider = providerInfo(profile?.ai_provider);
+  const hasOwnKey = provider.value === 'gemini' ? profile?.gemini_api_key_set : profile?.anthropic_api_key_set;
+
+  async function handleSaveAiKey() {
+    setAiMessage(null);
+    setAiKeySaving(true);
+    try {
+      await saveAiKey(provider.value, aiKeyInput.trim());
+      setAiKeyInput('');
+      await refetchProfile();
+      setAiMessage({ text: `${provider.name} key saved — new plans will use your account.`, isError: false });
+    } catch (err) {
+      setAiMessage({
+        text: err instanceof ApiError ? err.message : "That key didn't work. Check it and try again.",
+        isError: true,
+      });
+    } finally {
+      setAiKeySaving(false);
+    }
+  }
+
+  async function handleClearAiKey() {
+    setAiMessage(null);
+    await clearAiKey(provider.value);
     await refetchProfile();
   }
 
-  async function handleSignOut() {
-    await signOutAndReset(queryClient);
+  function handleChooseProvider(value: AIProvider) {
+    setAiMessage(null);
+    setAiKeyInput('');
+    upsertProfile.mutate({ ai_provider: value });
   }
+
+  // Held locally so quick successive taps build on each other instead of each
+  // one starting from the last server response (which would drop taps).
+  const [equipment, setEquipment] = useState<string[]>([]);
+  useEffect(() => {
+    if (profile) setEquipment(profile.equipment_access ?? []);
+  }, [profile]);
+
+  function toggleEquipment(value: string) {
+    const next = equipment.includes(value) ? equipment.filter((e) => e !== value) : [...equipment, value];
+    setEquipment(next);
+    upsertProfile.mutate({ equipment_access: next });
+  }
+
+  const usernameChanged = usernameInput.trim() !== '' && usernameInput.trim() !== username;
 
   return (
     <ScreenContainer>
-      <Text style={styles.heading}>Settings</Text>
+      <ScreenHeader title="Settings" subtitle="Changes save automatically unless there's a Save button." />
 
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+      <Section title="Account">
+        <Card style={styles.card}>
+          <TextField
+            label="Username"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={usernameInput}
+            onChangeText={(v) => {
+              setUsernameInput(v);
+              setUsernameMessage(null);
+            }}
+          />
+          {usernameMessage ? <InlineMessage message={usernameMessage} /> : null}
+          {usernameChanged ? (
+            <Button label="Save username" onPress={handleSaveUsername} loading={usernameSaving} />
+          ) : null}
+        </Card>
+      </Section>
 
-      <Card>
-        <Text style={styles.cardTitle}>AI plan generation</Text>
-        <Text style={styles.integrationStatus}>
-          {profile?.anthropic_api_key_set
-            ? 'Using your own Anthropic API key — plan generation is billed to your account.'
-            : "Using the app's shared key. Add your own Anthropic API key to use your own account instead."}
-        </Text>
-        {profile?.anthropic_api_key_set ? (
-          <Button label="Remove key" variant="secondary" onPress={handleClearAnthropicKey} />
-        ) : (
-          <View style={styles.keyForm}>
-            <TextField
-              placeholder="sk-ant-..."
-              autoCapitalize="none"
-              secureTextEntry
-              value={anthropicKeyInput}
-              onChangeText={setAnthropicKeyInput}
-            />
-            <Button label="Save" onPress={handleSaveAnthropicKey} loading={anthropicSaving} />
+      <Section title="Training" hint="Used every time a plan is generated.">
+        <Card style={styles.card}>
+          <Field label="Goal">
+            <ChipGroup>
+              {GOALS.map((g) => (
+                <Chip
+                  key={g.value}
+                  label={g.label}
+                  selected={profile?.goal === g.value}
+                  onPress={() => upsertProfile.mutate({ goal: g.value })}
+                />
+              ))}
+            </ChipGroup>
+          </Field>
+          <Field label="Experience">
+            <ChipGroup>
+              {EXPERIENCE_LEVELS.map((l) => (
+                <Chip
+                  key={l.value}
+                  label={l.label}
+                  selected={profile?.experience_level === l.value}
+                  onPress={() => upsertProfile.mutate({ experience_level: l.value })}
+                />
+              ))}
+            </ChipGroup>
+          </Field>
+          <Field label="Equipment you have">
+            <ChipGroup>
+              {EQUIPMENT_OPTIONS.map((option) => (
+                <Chip
+                  key={option.value}
+                  label={option.label}
+                  showCheck
+                  selected={equipment.includes(option.value)}
+                  onPress={() => toggleEquipment(option.value)}
+                />
+              ))}
+            </ChipGroup>
+            {!equipment.length ? (
+              <Text style={styles.hint}>Nothing selected — plans will assume a standard commercial gym.</Text>
+            ) : null}
+          </Field>
+          <Field label="Plan refresh reminder">
+            <ChipGroup>
+              {PLAN_CADENCES.map((c) => (
+                <Chip
+                  key={c.value}
+                  label={c.label}
+                  selected={profile?.plan_refresh_cadence === c.value}
+                  onPress={() => upsertProfile.mutate({ plan_refresh_cadence: c.value })}
+                />
+              ))}
+            </ChipGroup>
+          </Field>
+        </Card>
+      </Section>
+
+      <Section title="About you" hint="Optional — helps set sensible starting weights and volume.">
+        <Card style={styles.card}>
+          <Field label="Gender">
+            <ChipGroup>
+              {GENDERS.map((g) => (
+                <Chip
+                  key={g.value}
+                  label={g.label}
+                  selected={profile?.gender === g.value}
+                  onPress={() => upsertProfile.mutate({ gender: g.value })}
+                />
+              ))}
+            </ChipGroup>
+          </Field>
+          <View style={styles.inputRow}>
+            <View style={styles.inputRowItem}>
+              <TextField
+                label="Birth year"
+                placeholder="1995"
+                keyboardType="number-pad"
+                maxLength={4}
+                value={birthYearInput}
+                onChangeText={(v) => setBirthYearInput(v.replace(/\D/g, ''))}
+                onBlur={handleSaveAboutYou}
+              />
+            </View>
+            <View style={styles.inputRowItem}>
+              <TextField
+                label={`Height (${isImperial ? 'in' : 'cm'})`}
+                placeholder={isImperial ? '68' : '173'}
+                keyboardType="decimal-pad"
+                value={heightInput}
+                onChangeText={setHeightInput}
+                onBlur={handleSaveAboutYou}
+              />
+            </View>
           </View>
-        )}
-      </Card>
+        </Card>
+      </Section>
 
-      <Card>
-        <Text style={styles.cardTitle}>About you</Text>
-        <Text style={styles.integrationStatus}>
-          Optional — helps the AI set more appropriate starting weights and volume.
-        </Text>
+      <Section title="Units">
+        <Card style={styles.card}>
+          <ChipGroup>
+            {UNITS.map((u) => (
+              <Chip
+                key={u.value}
+                label={u.label}
+                selected={profile?.unit_system === u.value}
+                onPress={() => upsertProfile.mutate({ unit_system: u.value })}
+              />
+            ))}
+          </ChipGroup>
+        </Card>
+      </Section>
 
-        <Text style={styles.fieldLabel}>Gender</Text>
-        <View style={styles.chipsRow}>
-          {GENDERS.map((g) => (
-            <Text
-              key={g.value}
-              onPress={() => upsertProfile.mutate({ gender: g.value })}
-              style={[styles.chip, profile?.gender === g.value && styles.chipActive]}
-            >
-              {g.label}
-            </Text>
-          ))}
-        </View>
-
-        <Text style={styles.fieldLabel}>Birth year</Text>
-        <TextField
-          placeholder="e.g. 1995"
-          keyboardType="number-pad"
-          value={birthYearInput}
-          onChangeText={setBirthYearInput}
-          onBlur={handleSaveAboutYou}
-        />
-
-        <Text style={styles.fieldLabel}>Height ({profile?.unit_system === 'imperial' ? 'inches' : 'cm'})</Text>
-        <TextField
-          placeholder={profile?.unit_system === 'imperial' ? 'e.g. 68' : 'e.g. 173'}
-          keyboardType="decimal-pad"
-          value={heightInput}
-          onChangeText={setHeightInput}
-          onBlur={handleSaveAboutYou}
-        />
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>Goal</Text>
-        <View style={styles.chipsRow}>
-          {GOALS.map((goal) => (
-            <Text
-              key={goal}
-              onPress={() => upsertProfile.mutate({ goal })}
-              style={[styles.chip, profile?.goal === goal && styles.chipActive]}
-            >
-              {goal.replace(/_/g, ' ')}
-            </Text>
-          ))}
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>Experience level</Text>
-        <View style={styles.chipsRow}>
-          {EXPERIENCE_LEVELS.map((level) => (
-            <Text
-              key={level}
-              onPress={() => upsertProfile.mutate({ experience_level: level })}
-              style={[styles.chip, profile?.experience_level === level && styles.chipActive]}
-            >
-              {level}
-            </Text>
-          ))}
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>Warm-ups in generated plans</Text>
-        <View style={styles.chipsRow}>
-          <Text
-            onPress={() => upsertProfile.mutate({ include_warmup: true })}
-            style={[styles.chip, profile?.include_warmup !== false && styles.chipActive]}
-          >
-            Include warm-up
+      <Section title="AI plan generation" hint="Choose which AI builds your training plans.">
+        <Card style={styles.card}>
+          <Field label="Provider">
+            <ChipGroup>
+              {AI_PROVIDERS.map((p) => (
+                <Chip
+                  key={p.value}
+                  label={`${p.name} (${p.company})`}
+                  selected={provider.value === p.value}
+                  onPress={() => handleChooseProvider(p.value)}
+                />
+              ))}
+            </ChipGroup>
+          </Field>
+          <Text style={styles.bodyText}>
+            {hasOwnKey
+              ? `Using your own ${provider.name} API key — plan generation is billed to your ${provider.company} account.`
+              : `Using the app's shared ${provider.name} key, if one is set up. Add your own to bill plan generation to your ${provider.company} account instead.`}
           </Text>
-          <Text
-            onPress={() => upsertProfile.mutate({ include_warmup: false })}
-            style={[styles.chip, profile?.include_warmup === false && styles.chipActive]}
-          >
-            Skip warm-up
-          </Text>
-        </View>
-      </Card>
+          {aiMessage ? <InlineMessage message={aiMessage} /> : null}
+          {hasOwnKey ? (
+            <Button label={`Remove my ${provider.name} key`} variant="secondary" onPress={handleClearAiKey} />
+          ) : (
+            <>
+              <TextField
+                label={`${provider.name} API key`}
+                placeholder={provider.keyPlaceholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+                value={aiKeyInput}
+                onChangeText={setAiKeyInput}
+                onSubmitEditing={handleSaveAiKey}
+              />
+              <Text style={styles.hint}>{provider.keyHelp}</Text>
+              {aiKeyInput.trim() ? (
+                <Button label={`Save ${provider.name} key`} onPress={handleSaveAiKey} loading={aiKeySaving} />
+              ) : null}
+            </>
+          )}
+        </Card>
+      </Section>
 
-      <Card>
-        <Text style={styles.cardTitle}>Plan refresh reminder</Text>
-        <Text style={styles.integrationStatus}>
-          How often you'd like to be reminded to regenerate your plan based on your progress.
+      {isMobileWeb ? (
+        <Section title="App">
+          <Card style={styles.card}>
+            {pwa.installed ? (
+              <Text style={styles.bodyText}>You're using the installed Forge app.</Text>
+            ) : (
+              <>
+                <Text style={styles.bodyText}>
+                  Install Forge on your home screen — it opens full-screen like a regular app, with no browser bars.
+                </Text>
+                <Button label="Install app" onPress={handleInstallApp} />
+              </>
+            )}
+          </Card>
+          <InstallAppSheet
+            visible={installSheetOpen}
+            method={pwa.fallbackMethod}
+            onClose={() => setInstallSheetOpen(false)}
+          />
+        </Section>
+      ) : null}
+
+      <View style={styles.signOut}>
+        <Button label="Sign out" variant="secondary" onPress={() => signOutAndReset(queryClient)} />
+        <Text style={styles.hint}>
+          To switch accounts, sign out and sign in with the other one. Signing out clears this account's data from
+          this device.
         </Text>
-        <View style={styles.chipsRow}>
-          {PLAN_CADENCES.map((cadence) => (
-            <Text
-              key={cadence}
-              onPress={() => upsertProfile.mutate({ plan_refresh_cadence: cadence })}
-              style={[styles.chip, profile?.plan_refresh_cadence === cadence && styles.chipActive]}
-            >
-              {cadence}
-            </Text>
-          ))}
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>Units</Text>
-        <View style={styles.chipsRow}>
-          {(['metric', 'imperial'] as UnitSystem[]).map((unit) => (
-            <Text
-              key={unit}
-              onPress={() => upsertProfile.mutate({ unit_system: unit })}
-              style={[styles.chip, profile?.unit_system === unit && styles.chipActive]}
-            >
-              {unit}
-            </Text>
-          ))}
-        </View>
-      </Card>
-
-      <View style={styles.accountActions}>
-        <Button label="Switch account" variant="secondary" onPress={handleSignOut} />
-        <Button label="Sign out" variant="danger" onPress={handleSignOut} />
       </View>
-      <Text style={styles.accountHint}>
-        Only one account can be signed in on this device at a time. Signing out clears this account's
-        cached data locally before returning to sign-in.
-      </Text>
     </ScreenContainer>
   );
 }
 
+function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function InlineMessage({ message }: { message: NonNullable<Message> }) {
+  return <Text style={message.isError ? styles.error : styles.success}>{message.text}</Text>;
+}
+
 const styles = StyleSheet.create({
-  heading: {
+  section: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  sectionHead: {
+    gap: 2,
+    paddingHorizontal: 2,
+  },
+  sectionTitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  card: {
+    gap: spacing.md,
+  },
+  field: {
+    gap: spacing.sm,
+  },
+  fieldLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  inputRowItem: {
+    flex: 1,
+  },
+  bodyText: {
     color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  hint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   error: {
     color: colors.danger,
     fontSize: 14,
   },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: spacing.sm,
+  success: {
+    color: colors.success,
+    fontSize: 14,
   },
-  integrationStatus: {
-    color: colors.textMuted,
-    fontSize: 13,
-    marginBottom: spacing.sm,
-  },
-  fieldLabel: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: '500',
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  keyForm: {
+  signOut: {
     gap: spacing.sm,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  chip: {
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    fontSize: 13,
-    textTransform: 'capitalize',
-    overflow: 'hidden',
-  },
-  chipActive: {
-    color: '#fff',
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  accountActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  accountHint: {
-    color: colors.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
   },
 });

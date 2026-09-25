@@ -1,136 +1,253 @@
 import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { useRecentWorkouts } from '@/hooks/useWorkouts';
-import { useLatestPlan } from '@/hooks/usePlans';
+import { useRecentWorkouts, useStatsOverview, useWorkoutHistory } from '@/hooks/useWorkouts';
 import { usePersonalRecords } from '@/hooks/usePersonalRecords';
+import { useIsDesktopWeb } from '@/hooks/useResponsive';
 import { PersonalRecordRow } from '@/components/PersonalRecordRow';
-import { colors, spacing } from '@/constants/theme';
+import { InstallPwaPrompt } from '@/components/InstallPwaPrompt';
+import { StreakCard } from '@/components/StreakCard';
+import { ProgressStatsCard } from '@/components/ProgressStatsCard';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { formatDay, formatDaysAgo } from '@/lib/format';
+import { hasWorkoutInProgress, useWorkoutSessionStore } from '@/stores/useWorkoutSessionStore';
+import { colors, radii, spacing } from '@/constants/theme';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { data: workouts } = useRecentWorkouts();
-  const { data: latestPlan } = useLatestPlan();
+  const isDesktopWeb = useIsDesktopWeb();
+  const username = useAuthStore((s) => s.session?.username);
+  const { data: workouts, isLoading: workoutsLoading } = useRecentWorkouts();
+  const inProgress = hasWorkoutInProgress(useWorkoutSessionStore((s) => s.session));
   const { data: records } = usePersonalRecords();
+  const { data: history } = useWorkoutHistory();
+  const { data: overview } = useStatsOverview();
+  const workoutDates = useMemo(() => (history ?? workouts ?? []).map((w) => w.date), [history, workouts]);
 
   const stats = useMemo(() => {
-    const now = Date.now();
-    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-    const last7 = (workouts ?? []).filter((w) => new Date(w.date).getTime() >= sevenDaysAgo);
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return {
-      workoutsThisWeek: last7.length,
+      workoutsThisWeek: (workouts ?? []).filter((w) => new Date(w.date).getTime() >= sevenDaysAgo).length,
       lastWorkout: workouts?.[0] ?? null,
     };
   }, [workouts]);
 
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const isNewUser = !workoutsLoading && !workouts?.length;
+
+  const recordsCard = (
+    <Card style={styles.sectionCard}>
+      <View style={styles.cardHeaderRow}>
+        <Text style={styles.cardTitle}>Personal records</Text>
+        {records?.length ? (
+          <Text style={styles.link} onPress={() => router.push('/records')} accessibilityRole="link">
+            See all
+          </Text>
+        ) : null}
+      </View>
+      {(records ?? []).slice(0, 3).map((record) => (
+        <PersonalRecordRow key={record.exercise_id} record={record} />
+      ))}
+      {!records?.length ? (
+        <Text style={styles.mutedText}>Log a set with weight and your best lifts will show up here.</Text>
+      ) : null}
+    </Card>
+  );
+
   return (
     <ScreenContainer>
-      <Text style={styles.heading}>Home</Text>
+      <ScreenHeader title={username ? `Hi, ${username}` : 'Home'} subtitle={today} />
+      <InstallPwaPrompt />
 
-      <Card style={styles.statsRow}>
-        <View style={styles.statBlock}>
-          <Text style={styles.statValue}>{stats.workoutsThisWeek}</Text>
-          <Text style={styles.statLabel}>Workouts this week</Text>
-        </View>
-        <View style={styles.statBlock}>
-          <Text style={styles.statValue}>
-            {stats.lastWorkout ? new Date(stats.lastWorkout.date).toLocaleDateString() : '—'}
+      {isNewUser ? (
+        <Card style={styles.welcomeCard}>
+          <Ionicons name="barbell" size={28} color={colors.primary} />
+          <Text style={styles.welcomeTitle}>Log your first workout</Text>
+          <Text style={styles.mutedText}>
+            Every set you log feeds your personal records and makes your next plan smarter.
           </Text>
-          <Text style={styles.statLabel}>Last workout</Text>
-        </View>
-      </Card>
+          <Button label="Log a workout" onPress={() => router.push('/workout/new')} />
+        </Card>
+      ) : (
+        <>
+          <View style={styles.statsRow}>
+            <StatTile label="This week" value={String(stats.workoutsThisWeek)} hint="workouts" />
+            <StatTile
+              label="Last workout"
+              value={stats.lastWorkout ? formatDaysAgo(stats.lastWorkout.date) : '—'}
+              hint={stats.lastWorkout?.title ?? undefined}
+            />
+            <StatTile label="Records" value={String(records?.length ?? 0)} hint="exercises" />
+          </View>
+          <Button
+            label={inProgress ? 'Resume workout' : 'Log workout'}
+            onPress={() => router.push('/workout/new')}
+          />
+          <StreakCard workoutDates={workoutDates} />
+          {overview ? <ProgressStatsCard stats={overview} /> : null}
+        </>
+      )}
 
-      <Card>
-        <Text style={styles.cardTitle}>Recent activity</Text>
-        {(workouts ?? []).slice(0, 5).map((w) => (
-          <View key={w.id} style={styles.activityRow}>
-            <Text style={styles.activityTitle}>{w.title ?? w.source}</Text>
-            <Text style={styles.activityMeta}>
-              {new Date(w.date).toLocaleDateString()} · {w.source}
+      {recordsCard}
+
+      {workouts?.length ? (
+        <Card style={styles.sectionCard}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Recent workouts</Text>
+            <Text style={styles.link} onPress={() => router.navigate('/log')} accessibilityRole="link">
+              See all
             </Text>
           </View>
-        ))}
-        {!workouts?.length ? <Text style={styles.emptyText}>No workouts logged yet.</Text> : null}
-      </Card>
-
-      <Card>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>Recent PRs</Text>
-          <Text style={styles.historyLink} onPress={() => router.push('/records')}>
-            View all
-          </Text>
-        </View>
-        {(records ?? []).slice(0, 3).map((record) => (
-          <PersonalRecordRow key={record.exercise_id} record={record} />
-        ))}
-        {!records?.length ? <Text style={styles.emptyText}>No records yet.</Text> : null}
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>
-          {latestPlan ? 'Your current plan' : 'No plan yet'}
-        </Text>
-        <Text style={styles.emptyText}>
-          {latestPlan
-            ? latestPlan.plan.title
-            : 'Generate an AI training plan based on your workout history and preferences.'}
-        </Text>
-        <Button
-          label={latestPlan ? 'View plan' : 'Generate a plan'}
-          onPress={() => router.push('/(tabs)/plan')}
-        />
-      </Card>
+          {workouts.slice(0, 5).map((w) => (
+            <Pressable
+              key={w.id}
+              onPress={() => router.navigate('/log')}
+              style={({ pressed }) => [styles.activityRow, pressed && styles.pressed]}
+            >
+              <View style={styles.activityIcon}>
+                <Ionicons name="barbell-outline" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.activityTitle}>{w.title ?? 'Workout'}</Text>
+                <Text style={styles.activityMeta}>{formatDay(w.date)}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </Pressable>
+          ))}
+        </Card>
+      ) : null}
     </ScreenContainer>
   );
 }
 
+function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <Card style={styles.statTile}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue} numberOfLines={1}>
+        {value}
+      </Text>
+      {hint ? (
+        <Text style={styles.statHint} numberOfLines={1}>
+          {hint}
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
-  heading: {
+  flex: {
+    flex: 1,
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  welcomeCard: {
+    gap: spacing.sm,
+    borderColor: colors.primaryMuted,
+  },
+  welcomeTitle: {
     color: colors.text,
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: '800',
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    gap: spacing.sm,
   },
-  statBlock: {
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  statValue: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '700',
+  statTile: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm + 4,
+    gap: 2,
   },
   statLabel: {
     color: colors.textMuted,
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '600',
   },
-  cardTitle: {
+  statValue: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: spacing.sm,
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  statHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  twoColumn: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'stretch',
+  },
+  column: {
+    flex: 1,
+  },
+  sectionCard: {
+    gap: spacing.sm,
+    flexGrow: 1,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  historyLink: {
+  cardTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  badge: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '700',
+    backgroundColor: 'rgba(61,220,132,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    overflow: 'hidden',
+  },
+  badgeBusy: {
+    color: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  planTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  link: {
     color: colors.primary,
     fontSize: 13,
     fontWeight: '600',
+    cursor: 'pointer',
   },
   activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    gap: 2,
+    cursor: 'pointer',
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  activityIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   activityTitle: {
     color: colors.text,
@@ -141,9 +258,9 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
   },
-  emptyText: {
+  mutedText: {
     color: colors.textMuted,
     fontSize: 14,
-    marginBottom: spacing.md,
+    lineHeight: 20,
   },
 });

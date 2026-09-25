@@ -6,7 +6,7 @@ export async function fetchUserProfile(): Promise<UserProfile> {
 }
 
 export async function upsertUserProfile(
-  fields: Partial<Omit<UserProfile, 'user_id' | 'anthropic_api_key_set'>>
+  fields: Partial<Omit<UserProfile, 'user_id' | 'anthropic_api_key_set' | 'gemini_api_key_set' | 'plan_preferences'>>
 ): Promise<UserProfile> {
   return apiClient.patch<UserProfile>('/profile', fields);
 }

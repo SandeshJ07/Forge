@@ -18,6 +18,7 @@ export function ScreenContainer({ scroll = true, children, style, ...rest }: Scr
         <ScrollView
           contentContainerStyle={[styles.content, isDesktopWeb && styles.contentDesktop]}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {inner}
         </ScrollView>
@@ -37,6 +38,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.md,
+    paddingBottom: spacing.xl,
   },
   contentDesktop: {
     flex: 1,
