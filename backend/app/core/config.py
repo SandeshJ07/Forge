@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
@@ -45,6 +46,14 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:8081,http://localhost:19006,https://forge-twin.vercel.app"
 
     # --- SMTP (email verification + password reset codes) ---
+    # How codes are emailed. "smtp" uses the SMTP_* settings; "brevo" and "resend"
+    # send over HTTPS with EMAIL_API_KEY — for hosts that block outbound SMTP
+    # (Render's free plan blocks ports 25/465/587). SMTP_FROM_ADDRESS is the
+    # sender for every provider. Unconfigured = codes are printed to the log.
+    email_provider: Literal["smtp", "brevo", "resend"] = "smtp"
+    email_api_key: str = ""
+    email_from_name: str = "Forge"
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""

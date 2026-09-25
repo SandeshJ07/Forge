@@ -30,7 +30,7 @@ FastAPI + SQLAlchemy + Alembic backend for Forge, backed by a self-hosted Postgr
    ```
    Fill in `DATABASE_URL`, a random `JWT_SECRET` (generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"`), a `DATA_ENCRYPTION_KEY` (generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` — **back it up**, see Design notes), and optionally `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY` as the shared key every user gets (subject to the daily limit).
 
-   **Email (verification + password reset codes):** set the `SMTP_*` values to send real email (for Gmail: `smtp.gmail.com`, port 587, an App Password). Leave `SMTP_HOST` empty in local dev and codes are printed to the backend's console instead — look for `[email:dev-fallback]` in the uvicorn output.
+   **Email (verification + password reset codes):** set `EMAIL_PROVIDER`. `smtp` uses the `SMTP_*` values (for Gmail: `smtp.gmail.com`, port 587, an App Password). On hosts that block outbound SMTP — **Render's free plan blocks ports 25/465/587**, which shows up as `OSError: [Errno 101] Network is unreachable` — use `brevo` (free 300/day, can send from a single verified address such as your Gmail, no domain needed) or `resend` (needs your own verified domain), with `EMAIL_API_KEY`. `SMTP_FROM_ADDRESS` is the sender for every provider. With no provider configured, codes are printed to the backend's console instead — look for `[email:dev-fallback]` in the uvicorn output.
 4. **Run migrations**:
    ```bash
    alembic upgrade head
