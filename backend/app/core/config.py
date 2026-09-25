@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     progress_photos_enabled: bool = False
 
     storage_dir: str = "storage"
-    cors_origins: str = "http://localhost:8081,http://localhost:19006,https://forge-twin.vercel.app"
+    cors_origins: str = "http://localhost:8081,http://localhost:19006,https://forge-bro.vercel.app"
 
     # --- SMTP (email verification + password reset codes) ---
     # How codes are emailed. "smtp" uses the SMTP_* settings; "brevo" and "resend"
