@@ -21,6 +21,11 @@ class SignUpRequest(BaseModel):
     _check_username = field_validator("username")(_validate_username)
 
 
+class GoogleSignInRequest(BaseModel):
+    # The ID token (a JWT) from Google Sign-In on the device.
+    id_token: str = Field(min_length=20, max_length=4096)
+
+
 class UpdateUsernameRequest(BaseModel):
     username: str = Field(min_length=3, max_length=30)
 

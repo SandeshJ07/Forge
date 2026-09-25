@@ -4,12 +4,17 @@ import { StyleSheet, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { queryClient } from '@/lib/queryClient';
 // Side-effect import: captures the browser's one-time install prompt at startup.
 import '@/lib/pwaInstall';
+
+// On web, Google sign-in finishes in a popup that loads this app; this hands
+// the result back to the opener and closes the popup. No-op elsewhere.
+WebBrowser.maybeCompleteAuthSession();
 import { useSessionListener } from '@/hooks/useSession';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUserProfile } from '@/hooks/useUserProfile';

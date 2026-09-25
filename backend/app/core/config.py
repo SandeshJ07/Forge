@@ -9,6 +9,10 @@ class Settings(BaseSettings):
 
     database_url: str
     jwt_secret: str
+    # Encrypts sensitive data at rest (app/core/crypto.py). A Fernet key:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Back it up — encrypted data can't be read without it.
+    data_encryption_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
@@ -26,6 +30,11 @@ class Settings(BaseSettings):
     # Plan generations per user per day (user's local calendar day) on the shared
     # keys above. Users with their own key aren't limited. 0 disables the shared keys.
     shared_key_daily_plan_limit: int = 5
+
+    # Google Sign-In: OAuth client IDs (Google Cloud Console → Credentials) whose
+    # ID tokens are accepted — web, iOS and Android each have their own. Comma-
+    # separated; empty disables Google sign-in.
+    google_client_ids: str = ""
 
     storage_dir: str = "storage"
     cors_origins: str = "http://localhost:8081,http://localhost:19006"
@@ -49,10 +58,29 @@ class Settings(BaseSettings):
             return None
         return value.strip()
 
+    @field_validator("data_encryption_key")
+    @classmethod
+    def _valid_fernet_key(cls, value: str) -> str:
+        from cryptography.fernet import Fernet
+
+        value = value.strip()
+        try:
+            Fernet(value.encode())
+        except ValueError:
+            raise ValueError(
+                "DATA_ENCRYPTION_KEY must be a Fernet key. Generate one with: "
+                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            ) from None
+        return value
+
     @property
     def gemini_model_chain(self) -> list[str]:
         fallbacks = [m.strip() for m in self.gemini_fallback_models.split(",") if m.strip()]
         return list(dict.fromkeys([self.gemini_model, *fallbacks]))  # dedupe, keep order
+
+    @property
+    def google_client_id_list(self) -> list[str]:
+        return [cid.strip() for cid in self.google_client_ids.split(",") if cid.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

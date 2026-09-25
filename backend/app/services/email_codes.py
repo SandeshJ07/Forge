@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.crypto import keyed_hash
 from app.models.email_code import EmailCode
 
 settings = get_settings()
@@ -19,6 +20,11 @@ MAX_CODES_PER_HOUR = 5
 
 class TooManyCodesRequested(Exception):
     pass
+
+
+def _hash_code(code: str) -> str:
+    # Keyed, so a leaked table can't be brute-forced (there are only a million 6-digit codes).
+    return keyed_hash(code, "email-code")
 
 
 def generate_code() -> str:
@@ -49,7 +55,7 @@ def create_code(db: Session, user_id: UUID, purpose: str) -> str:
 
     code = generate_code()
     expires_at = now + timedelta(minutes=settings.email_code_expire_minutes)
-    db.add(EmailCode(user_id=user_id, purpose=purpose, code=code, expires_at=expires_at))
+    db.add(EmailCode(user_id=user_id, purpose=purpose, code_hash=_hash_code(code), expires_at=expires_at))
     db.commit()
     return code
 
@@ -79,7 +85,7 @@ def verify_and_consume_code(db: Session, user_id: UUID, purpose: str, code: str)
     if record is None:
         return False
 
-    if not secrets.compare_digest(record.code, code):
+    if not secrets.compare_digest(record.code_hash, _hash_code(code.strip())):
         record.attempts += 1
         if record.attempts >= MAX_ATTEMPTS_PER_CODE:
             record.used_at = now

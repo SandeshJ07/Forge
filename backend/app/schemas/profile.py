@@ -34,9 +34,10 @@ class UserProfileUpdate(BaseModel):
     ai_provider: Literal["anthropic", "gemini"] | None = None
     include_warmup: bool | None = None
     plan_refresh_cadence: str | None = None
-    gender: str | None = None
-    birth_year: int | None = None
-    height_cm: float | None = None
+    # Stored encrypted, so the database can't enforce these — validated here instead.
+    gender: Literal["male", "female", "other", "prefer_not_to_say"] | None = None
+    birth_year: int | None = Field(default=None, ge=1900, le=2100)
+    height_cm: float | None = Field(default=None, ge=50, le=300)
 
     def dump_set_fields(self) -> dict:
         """Only the fields the client actually sent, so a partial update never

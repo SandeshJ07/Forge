@@ -6,6 +6,8 @@ psycopg[binary]==3.2.3
 pydantic[email]==2.10.4
 pydantic-settings==2.7.0
 python-jose[cryptography]==3.3.0
+# Fernet + HKDF for encrypting sensitive data at rest (app/core/crypto.py).
+cryptography==50.0.1
 bcrypt==4.2.1
 python-multipart==0.0.20
 httpx==0.28.1
@@ -13,3 +15,6 @@ python-dotenv==1.0.1
 # IANA timezones incl. legacy aliases (Asia/Calcutta, US/Pacific) that browsers still report
 # and some OS images omit; zoneinfo falls back to this package.
 tzdata==2026.4
+# Verifies Google Sign-In ID tokens (app/services/google_auth.py); requests is its HTTP transport.
+google-auth==2.58.1
+requests==2.34.2
