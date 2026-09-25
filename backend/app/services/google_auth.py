@@ -1,5 +1,6 @@
 """Verifies Google Sign-In ID tokens sent by the app (POST /auth/google)."""
 
+import logging
 from dataclasses import dataclass
 
 import requests
@@ -10,6 +11,7 @@ from google.oauth2 import id_token
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 _session = requests.Session()
 
 
@@ -46,6 +48,8 @@ def verify_google_id_token(token: str) -> GoogleIdentity:
     except TransportError as exc:  # couldn't fetch Google's signing keys
         raise GoogleUnreachable("Couldn't reach Google to check your sign-in. Please try again.") from exc
     except ValueError as exc:
+        # e.g. wrong audience (client ID mismatch), expired, bad signature. No secrets in the message.
+        logger.warning("Google ID token rejected: %s", exc)
         raise InvalidGoogleToken("Google sign-in failed. Please try again.") from exc
     if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
         raise InvalidGoogleToken("Google sign-in failed. Please try again.")
