@@ -90,16 +90,12 @@ function RootNavigation() {
             options={{ headerShown: true, title: 'Exercise', headerLeft: () => <HeaderBackButton fallback="/glossary" /> }}
           />
           <Stack.Screen
-            name="plan/index"
-            options={{ headerShown: true, title: 'Exercise groups', headerLeft: () => <HeaderBackButton fallback="/log" /> }}
-          />
-          <Stack.Screen
             name="plan/history"
-            options={{ headerShown: true, title: 'Past exercise groups', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
+            options={{ headerShown: true, title: 'Past plans', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
           />
           <Stack.Screen
             name="plan/new"
-            options={{ headerShown: true, title: 'New exercise groups', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
+            options={{ headerShown: true, title: 'New plan', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
           />
           <Stack.Screen
             name="records"

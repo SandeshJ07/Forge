@@ -450,7 +450,7 @@ function PlanGroupsSheet({
             style={styles.link}
             onPress={() => {
               onClose();
-              router.push('/plan');
+              router.navigate('/plan');
             }}
             accessibilityRole="link"
           >
