@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
     progress_photos_enabled: bool = False
 
     storage_dir: str = "storage"
-    cors_origins: str = "http://localhost:8081,http://localhost:19006"
+    cors_origins: str = "http://localhost:8081,http://localhost:19006,https://forge-twin.vercel.app"
 
     # --- SMTP (email verification + password reset codes) ---
     smtp_host: str = ""
@@ -88,7 +89,14 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        # Browsers send only scheme://host[:port] as the Origin, so drop any path or
+        # trailing slash someone pastes in (e.g. "https://app.vercel.app/sign-in").
+        origins = []
+        for entry in self.cors_origins.split(","):
+            parsed = urlsplit(entry.strip())
+            if parsed.scheme and parsed.netloc:
+                origins.append(f"{parsed.scheme}://{parsed.netloc}")
+        return list(dict.fromkeys(origins))
 
 
 @lru_cache
