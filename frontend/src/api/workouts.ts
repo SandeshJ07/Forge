@@ -47,6 +47,12 @@ export async function fetchRecentWorkouts(limit = 50): Promise<Workout[]> {
   return apiClient.get<Workout[]>(`/workouts?limit=${limit}`);
 }
 
+/** Workouts in [start, end), newest first — e.g. one local calendar month. */
+export async function fetchWorkoutsBetween(start: Date, end: Date): Promise<Workout[]> {
+  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '1000' });
+  return apiClient.get<Workout[]>(`/workouts?${params}`);
+}
+
 export async function fetchWorkoutSets(workoutId: string): Promise<WorkoutSet[]> {
   return apiClient.get<WorkoutSet[]>(`/workouts/${workoutId}/sets`);
 }

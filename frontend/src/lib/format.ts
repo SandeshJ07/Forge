@@ -17,8 +17,14 @@ function daysBeforeToday(date: Date): number {
   return Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
 }
 
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 function toDate(input: string | Date): Date {
-  return typeof input === 'string' ? new Date(input) : input;
+  if (typeof input !== 'string') return input;
+  // A bare "2026-09-24" (e.g. a measurement's date) is a calendar day, not UTC
+  // midnight — parsed as UTC it shows as the day before west of Greenwich.
+  const day = DATE_ONLY.exec(input);
+  return day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(input);
 }
 
 /** "Today", "Yesterday", "Mon, Sep 21" — or "Sep 21, 2025" outside the current year. */

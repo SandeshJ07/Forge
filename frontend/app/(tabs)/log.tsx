@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +7,9 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { WorkoutFeedbackControl } from '@/components/WorkoutFeedbackControl';
-import { useRecentWorkouts } from '@/hooks/useWorkouts';
+import { StreakCard } from '@/components/StreakCard';
+import { MonthPicker, startOfMonth } from '@/components/MonthPicker';
+import { useWorkoutHistory, useWorkoutsInMonth } from '@/hooks/useWorkouts';
 import { formatDayTime } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 
@@ -17,7 +20,15 @@ function shortSummary(summary: string | null): string | null {
 
 export default function LogScreen() {
   const router = useRouter();
-  const { data: workouts, isLoading } = useRecentWorkouts();
+  const [month, setMonth] = useState(() => startOfMonth(new Date()));
+  const { data: workouts, isLoading } = useWorkoutsInMonth(month);
+  // The streak counts across all history; the calendar shows the chosen month.
+  const { data: history } = useWorkoutHistory();
+  const workoutDates = useMemo(
+    () => [...new Set([...(history ?? []), ...(workouts ?? [])].map((w) => w.date))],
+    [history, workouts]
+  );
+  const monthName = month.toLocaleDateString(undefined, { month: 'long' });
 
   return (
     <ScreenContainer scroll={false} style={styles.container}>
@@ -44,13 +55,34 @@ export default function LogScreen() {
             <WorkoutFeedbackControl workout={item} />
           </Card>
         )}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            <MonthPicker month={month} onChange={setMonth} />
+            {/* Keyed by month so a day tapped in one month doesn't stay selected in the next. */}
+            <StreakCard key={month.getTime()} workoutDates={workoutDates} month={month} />
+            {workouts?.length ? (
+              <Text style={styles.sectionTitle}>
+                {workouts.length} workout{workouts.length === 1 ? '' : 's'} in {monthName}
+              </Text>
+            ) : null}
+          </View>
+        }
         ListEmptyComponent={
           !isLoading ? (
             <Card style={styles.emptyCard}>
               <Ionicons name="barbell-outline" size={32} color={colors.textMuted} />
-              <Text style={styles.emptyTitle}>No workouts yet</Text>
-              <Text style={styles.emptyText}>Log a session and it'll show up here, ready to rate.</Text>
-              <Button label="Log your first workout" onPress={() => router.push('/workout/new')} />
+              {history?.length ? (
+                <>
+                  <Text style={styles.emptyTitle}>No workouts in {monthName}</Text>
+                  <Text style={styles.emptyText}>Pick another month above to see those sessions.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.emptyTitle}>No workouts yet</Text>
+                  <Text style={styles.emptyText}>Log a session and it'll show up here, ready to rate.</Text>
+                  <Button label="Log your first workout" onPress={() => router.push('/workout/new')} />
+                </>
+              )}
             </Card>
           ) : null
         }
@@ -64,6 +96,15 @@ export default function LogScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  listHeader: {
+    gap: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
   },
   container: {
     gap: spacing.sm,

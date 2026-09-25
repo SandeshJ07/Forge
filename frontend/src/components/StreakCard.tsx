@@ -22,15 +22,22 @@ function levelFor(count: number): number {
   return count <= 0 ? 0 : count === 1 ? 1 : 2;
 }
 
-export function StreakCard({ workoutDates }: { workoutDates: string[] }) {
+/**
+ * Weekly streak (counted over all of workoutDates) plus a calendar of one
+ * month — the current one unless `month` (any date in it) is given.
+ */
+export function StreakCard({ workoutDates, month }: { workoutDates: string[]; month?: Date }) {
   const [selected, setSelected] = useState<Date | null>(null);
 
   const today = startOfDay(new Date());
   const summary = useMemo(() => summarizeStreak(workoutDates), [workoutDates]);
-  // Just the current month (at most 42 slots, cheap to rebuild); the streak
-  // number above still counts every week.
-  const weeks = buildMonthWeeks(today);
-  const monthName = today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  // One month (at most 42 slots, cheap to rebuild); the streak number above
+  // still counts every week.
+  const shownMonth = month ?? today;
+  const isCurrentMonth =
+    shownMonth.getFullYear() === today.getFullYear() && shownMonth.getMonth() === today.getMonth();
+  const weeks = buildMonthWeeks(shownMonth);
+  const monthName = shownMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const workoutsThisMonth = weeks
     .flat()
     .reduce((n, day) => n + (day ? (summary.countsByDay.get(dayKey(day)) ?? 0) : 0), 0);
@@ -111,7 +118,9 @@ export function StreakCard({ workoutDates }: { workoutDates: string[] }) {
         <Text style={styles.readout} numberOfLines={1}>
           {selected
             ? `${formatDay(selected)} · ${selectedCount ? `${selectedCount} workout${selectedCount === 1 ? '' : 's'}` : 'Rest day'}`
-            : `${workoutsThisMonth} workout${workoutsThisMonth === 1 ? '' : 's'} this month · tap a day`}
+            : `${workoutsThisMonth} workout${workoutsThisMonth === 1 ? '' : 's'} ${
+                isCurrentMonth ? 'this month' : `in ${shownMonth.toLocaleDateString(undefined, { month: 'long' })}`
+              } · tap a day`}
         </Text>
         <View style={styles.legend} accessibilityLabel="Legend: none, one, two or more workouts">
           <Text style={styles.legendText}>Less</Text>
