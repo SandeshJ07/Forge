@@ -12,7 +12,12 @@ from app.core.encrypted_types import EncryptedFloat, EncryptedInt, EncryptedJSON
 class UserProfile(Base):
     __tablename__ = "user_profiles"
     __table_args__ = (
-        CheckConstraint("goal in ('strength','hypertrophy','general_fitness','endurance')", name="user_profiles_goal_check"),
+        # Up to two goals, most important first.
+        CheckConstraint(
+            "goals <@ ARRAY['strength','hypertrophy','general_fitness','endurance']::varchar[] "
+            "AND cardinality(goals) <= 2",
+            name="user_profiles_goals_check",
+        ),
         CheckConstraint(
             "experience_level in ('beginner','intermediate','advanced')", name="user_profiles_experience_level_check"
         ),
@@ -26,7 +31,7 @@ class UserProfile(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    goal: Mapped[str | None] = mapped_column(String)
+    goals: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list, server_default="{}")
     experience_level: Mapped[str | None] = mapped_column(String)
     equipment_access: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     unit_system: Mapped[str] = mapped_column(String, nullable=False, default="metric")

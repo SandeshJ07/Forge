@@ -9,6 +9,10 @@ WEEKDAY_NAMES = {
     "mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
     "fri": "Friday", "sat": "Saturday", "sun": "Sunday",
 }
+GOAL_NAMES = {
+    "strength": "strength", "hypertrophy": "muscle growth (hypertrophy)",
+    "general_fitness": "general fitness", "endurance": "endurance",
+}
 MUSCLE_NAMES = {
     "chest": "chest", "back": "back", "shoulders": "shoulders", "biceps": "biceps", "triceps": "triceps",
     "forearms": "forearms", "abs": "abs", "lower_back": "lower back", "quads": "quads",
@@ -33,7 +37,8 @@ class PersonalRecordSummary:
 
 @dataclass
 class PlanGenerationInput:
-    goal: str | None
+    # Most important first; up to two.
+    goals: list[str]
     experience_level: str | None
     equipment_access: list[str] | None
     unit_system: str
@@ -54,6 +59,15 @@ class PlanGenerationInput:
     plan_equipment: list[str] | None = None
     session_minutes: int | None = None
     notes: str | None = None
+
+
+def _goals_line(goals: list[str]) -> str:
+    names = [GOAL_NAMES.get(g, g) for g in goals]
+    if not names:
+        return "Goal: not specified, assume general fitness"
+    if len(names) == 1:
+        return f"Goal: {names[0]}"
+    return f"Goals: {names[0]} (primary) and {names[1]} (secondary) — prioritise the primary, and work the secondary in"
 
 
 def _build_preferences_section(data: "PlanGenerationInput") -> tuple[str, str]:
@@ -162,7 +176,7 @@ def build_plan_prompt(data: PlanGenerationInput) -> str:
     return f"""You are a knowledgeable, safety-conscious strength & conditioning coach. Build a set of reusable exercise groups (each group is one workout: a list of exercises done together in a session) for a single gym-goer, based on the profile and recent training summary below. The athlete picks a group to load when they log a workout.
 
 ## Athlete profile
-- Goal: {data.goal or 'not specified, assume general fitness'}
+- {_goals_line(data.goals)}
 - Experience level: {data.experience_level or 'not specified, assume beginner'}
 - Equipment access: {', '.join(data.equipment_access) if data.equipment_access else 'assume standard commercial gym'}
 - Units: {data.unit_system}

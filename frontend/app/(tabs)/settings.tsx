@@ -16,18 +16,13 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useUserProfile, useUpsertUserProfile } from '@/hooks/useUserProfile';
 import { usePlanUsage } from '@/hooks/usePlans';
 import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
+import { GOAL_OPTIONS, MAX_GOALS, toggleGoal } from '@/constants/goals';
 import { InstallAppSheet } from '@/components/InstallAppSheet';
 import { useIsMobileWeb } from '@/hooks/useResponsive';
 import { usePwaInstall } from '@/lib/pwaInstall';
-import type { ExperienceLevel, Gender, Goal, PlanRefreshCadence, UnitSystem } from '@/types/database';
+import type { ExperienceLevel, Gender, PlanRefreshCadence, UnitSystem } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
-const GOALS: { value: Goal; label: string }[] = [
-  { value: 'strength', label: 'Strength' },
-  { value: 'hypertrophy', label: 'Build muscle' },
-  { value: 'general_fitness', label: 'General fitness' },
-  { value: 'endurance', label: 'Endurance' },
-];
 const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: 'beginner', label: 'Beginner' },
   { value: 'intermediate', label: 'Intermediate' },
@@ -198,17 +193,28 @@ export default function SettingsScreen() {
 
       <Section title="Training" hint="Used every time a plan is generated.">
         <Card style={styles.card}>
-          <Field label="Goal">
+          <Field label={`Goals (up to ${MAX_GOALS})`}>
             <ChipGroup>
-              {GOALS.map((g) => (
-                <Chip
-                  key={g.value}
-                  label={g.label}
-                  selected={profile?.goal === g.value}
-                  onPress={() => upsertProfile.mutate({ goal: g.value })}
-                />
-              ))}
+              {GOAL_OPTIONS.map((g) => {
+                const goals = profile?.goals ?? [];
+                const selected = goals.includes(g.value);
+                return (
+                  <Chip
+                    key={g.value}
+                    label={g.label}
+                    showCheck
+                    selected={selected}
+                    disabled={goals.length >= MAX_GOALS && !selected}
+                    onPress={() => upsertProfile.mutate({ goals: toggleGoal(goals, g.value) })}
+                  />
+                );
+              })}
             </ChipGroup>
+            <Text style={styles.hint}>
+              {(profile?.goals?.length ?? 0) >= MAX_GOALS
+                ? `Main goal: ${GOAL_OPTIONS.find((o) => o.value === profile?.goals[0])?.label}. Tap one to remove it and pick another.`
+                : 'The first goal you pick is your main one.'}
+            </Text>
           </Field>
           <Field label="Experience">
             <ChipGroup>

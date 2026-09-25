@@ -9,16 +9,24 @@ interface OptionCardProps {
   onPress: () => void;
   /** Checkbox (multi-select) instead of radio (single-select) indicator. */
   multi?: boolean;
+  /** Dimmed and not pressable, e.g. when a pick limit is reached. */
+  disabled?: boolean;
 }
 
 /** Large, full-width selectable row — easier to hit and scan than small pills for key choices. */
-export function OptionCard({ label, description, selected, onPress, multi = false }: OptionCardProps) {
+export function OptionCard({ label, description, selected, onPress, multi = false, disabled = false }: OptionCardProps) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole={multi ? 'checkbox' : 'radio'}
-      accessibilityState={multi ? { checked: selected } : { selected }}
-      style={({ pressed }) => [styles.card, selected && styles.cardSelected, pressed && !selected && styles.cardPressed]}
+      accessibilityState={multi ? { checked: selected, disabled } : { selected, disabled }}
+      style={({ pressed }) => [
+        styles.card,
+        selected && styles.cardSelected,
+        pressed && !selected && styles.cardPressed,
+        disabled && styles.cardDisabled,
+      ]}
     >
       <View style={styles.text}>
         <Text style={styles.label}>{label}</Text>
@@ -44,6 +52,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     cursor: 'pointer',
+  },
+  cardDisabled: {
+    opacity: 0.4,
   },
   cardPressed: {
     borderColor: colors.textMuted,
