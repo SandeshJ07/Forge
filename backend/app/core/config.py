@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     email_provider: Literal["smtp", "brevo", "resend"] = "smtp"
     email_api_key: str = ""
     email_from_name: str = "Forge"
+    # The web app's public URL. Emails link to it ("Open Forge") and show its
+    # logo (APP_URL/icon-192.png); empty leaves both out.
+    app_url: str = ""
 
     smtp_host: str = ""
     smtp_port: int = 587

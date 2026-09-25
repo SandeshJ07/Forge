@@ -26,6 +26,7 @@ class UserProfileResponse(BaseModel):
     birth_year: int | None
     height_cm: float | None
     onboarded_at: datetime | None
+    has_password: bool
     plan_preferences: dict[str, Any] | None = None
 
 

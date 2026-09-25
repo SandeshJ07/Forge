@@ -185,6 +185,8 @@ export interface UserProfile {
   birth_year: number | null;
   height_cm: number | null;
   onboarded_at: string | null;
+  /** False for accounts created with Google that never set a password. */
+  has_password: boolean;
   /** Last Plan preferences submitted (saved on "Create my plan", even if generation failed). */
   plan_preferences: PlanPreferences | null;
 }

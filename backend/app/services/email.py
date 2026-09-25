@@ -1,11 +1,18 @@
 import logging
 import smtplib
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
 import httpx
 
 from app.core.config import get_settings
+from app.services.email_templates import (
+    RenderedEmail,
+    password_reset_email,
+    set_password_email,
+    verification_email,
+)
 
 settings = get_settings()
 
@@ -23,11 +30,14 @@ def _print_fallback(to_address: str, subject: str, body: str) -> None:
     print(f"[email:dev-fallback] to={to_address} subject={subject!r}\n{body}")
 
 
-def _send_smtp(to_address: str, subject: str, body: str) -> None:
-    message = MIMEText(body)
-    message["Subject"] = subject
+def _send_smtp(to_address: str, email: RenderedEmail) -> None:
+    message = MIMEMultipart("alternative")
+    message["Subject"] = email.subject
     message["From"] = formataddr((settings.email_from_name, settings.smtp_from_address))
     message["To"] = to_address
+    # Plain text first, HTML last: clients show the last part they can render.
+    message.attach(MIMEText(email.text, "plain", "utf-8"))
+    message.attach(MIMEText(email.html, "html", "utf-8"))
 
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
@@ -39,7 +49,7 @@ def _send_smtp(to_address: str, subject: str, body: str) -> None:
     except (smtplib.SMTPException, OSError) as exc:
         # OSError covers DNS failures, refused connections and timeouts — and
         # "Network is unreachable" on hosts that block outbound SMTP ports.
-        logger.exception("Failed to send %r email via %s:%s", subject, settings.smtp_host, settings.smtp_port)
+        logger.exception("Failed to send %r email via %s:%s", email.subject, settings.smtp_host, settings.smtp_port)
         raise EmailSendError(str(exc)) from exc
 
 
@@ -55,7 +65,7 @@ def _post(provider: str, url: str, headers: dict, payload: dict, subject: str) -
         raise EmailSendError(f"{provider} returned HTTP {response.status_code}")
 
 
-def _send_brevo(to_address: str, subject: str, body: str) -> None:
+def _send_brevo(to_address: str, email: RenderedEmail) -> None:
     _post(
         "Brevo",
         "https://api.brevo.com/v3/smtp/email",
@@ -63,14 +73,15 @@ def _send_brevo(to_address: str, subject: str, body: str) -> None:
         {
             "sender": {"name": settings.email_from_name, "email": settings.smtp_from_address},
             "to": [{"email": to_address}],
-            "subject": subject,
-            "textContent": body,
+            "subject": email.subject,
+            "htmlContent": email.html,
+            "textContent": email.text,
         },
-        subject,
+        email.subject,
     )
 
 
-def _send_resend(to_address: str, subject: str, body: str) -> None:
+def _send_resend(to_address: str, email: RenderedEmail) -> None:
     _post(
         "Resend",
         "https://api.resend.com/emails",
@@ -78,45 +89,34 @@ def _send_resend(to_address: str, subject: str, body: str) -> None:
         {
             "from": formataddr((settings.email_from_name, settings.smtp_from_address)),
             "to": [to_address],
-            "subject": subject,
-            "text": body,
+            "subject": email.subject,
+            "html": email.html,
+            "text": email.text,
         },
-        subject,
+        email.subject,
     )
 
 
-def _send(to_address: str, subject: str, body: str) -> None:
+def _send(to_address: str, email: RenderedEmail) -> None:
     provider = settings.email_provider
     if provider == "smtp":
         if not settings.smtp_host:
-            return _print_fallback(to_address, subject, body)
-        return _send_smtp(to_address, subject, body)
+            return _print_fallback(to_address, email.subject, email.text)
+        return _send_smtp(to_address, email)
     if not settings.email_api_key:
-        return _print_fallback(to_address, subject, body)
+        return _print_fallback(to_address, email.subject, email.text)
     if provider == "brevo":
-        return _send_brevo(to_address, subject, body)
-    return _send_resend(to_address, subject, body)
+        return _send_brevo(to_address, email)
+    return _send_resend(to_address, email)
 
 
 def send_verification_code(to_address: str, code: str) -> None:
-    _send(
-        to_address,
-        subject="Verify your Forge account",
-        body=(
-            f"Your verification code is: {code}\n\n"
-            f"Enter this in the app to verify your email. It expires in {settings.email_code_expire_minutes} minutes.\n\n"
-            "If you didn't create a Forge account, you can ignore this email."
-        ),
-    )
+    _send(to_address, verification_email(code))
+
+
+def send_set_password_code(to_address: str, code: str) -> None:
+    _send(to_address, set_password_email(code))
 
 
 def send_password_reset_code(to_address: str, code: str) -> None:
-    _send(
-        to_address,
-        subject="Reset your Forge password",
-        body=(
-            f"Your password reset code is: {code}\n\n"
-            f"Enter this in the app along with your new password. It expires in {settings.email_code_expire_minutes} minutes.\n\n"
-            "If you didn't request a password reset, you can ignore this email."
-        ),
-    )
+    _send(to_address, password_reset_email(code))

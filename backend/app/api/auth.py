@@ -1,11 +1,15 @@
+import logging
 import re
 import secrets
+import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.crypto import email_index, keyed_hash
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -20,8 +24,11 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.schemas.auth import (
+    DeleteAccountRequest,
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     GoogleSignInRequest,
+    PasswordCodeResponse,
     RefreshRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
@@ -33,7 +40,12 @@ from app.schemas.auth import (
     UsernameResponse,
     VerifyEmailRequest,
 )
-from app.services.email import EmailSendError, send_password_reset_code, send_verification_code
+from app.services.email import (
+    EmailSendError,
+    send_password_reset_code,
+    send_set_password_code,
+    send_verification_code,
+)
 from app.services.email_codes import TooManyCodesRequested, create_code, verify_and_consume_code
 from app.services.google_auth import (
     GoogleSignInDisabled,
@@ -43,6 +55,8 @@ from app.services.google_auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+settings = get_settings()
+logger = logging.getLogger(__name__)
 
 # Per-IP limits on the unauthenticated routes. The code-checking routes are
 # also capped per code (see app/services/email_codes.py); these stop one
@@ -298,3 +312,82 @@ def update_username(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken") from exc
 
     return UsernameResponse(username=current_user.username)
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}{'•' * max(1, min(len(local) - 1, 6))}@{domain}"
+
+
+@router.post("/password/code", response_model=PasswordCodeResponse, dependencies=[Depends(code_send_limit)])
+def send_password_code(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> PasswordCodeResponse:
+    """Emails a signed-in, Google-only user the code that lets them set a password."""
+    if current_user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Your account already has a password — change it with your current one."
+        )
+    try:
+        code = create_code(db, current_user.id, "reset_password")
+    except TooManyCodesRequested as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    try:
+        send_set_password_code(current_user.email, code)
+    except EmailSendError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=EMAIL_UNAVAILABLE) from exc
+    return PasswordCodeResponse(sent_to=_mask_email(current_user.email))
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(code_check_limit)])
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """
+    Changes the password (current password required) or, for Google-only
+    accounts, sets the first one (emailed code required). Google sign-in keeps
+    working either way.
+    """
+    if current_user.password_hash:
+        if not body.current_password or not verify_password(body.current_password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your current password isn't right.")
+    elif not body.code or not verify_and_consume_code(db, current_user.id, "reset_password", body.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+
+
+@router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(sign_in_limit)])
+def delete_account(
+    body: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """
+    Permanently deletes the signed-in user and everything they own. Every
+    table references users with ON DELETE CASCADE, so one delete removes
+    profile, workouts and sets, measurements, plans, personal records,
+    feedback, API keys and email codes; progress-photo files on disk are
+    removed here too. Needs the password again (or, for Google-only accounts,
+    the username typed out) so an unlocked device alone can't do it.
+    """
+    if current_user.password_hash:
+        if not body.password or not verify_password(body.password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="That password isn't right.")
+    elif (body.confirm_username or "").strip() != current_user.username:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Type your username exactly to confirm.")
+
+    user_id = current_user.id
+    db.delete(current_user)
+    db.commit()
+
+    photo_dir = Path(settings.storage_dir) / "progress_photos" / str(user_id)
+    try:
+        shutil.rmtree(photo_dir)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # The account is already gone; leftover files are only reachable by that
+        # (now deleted) user id, so log for cleanup rather than fail the request.
+        logger.exception("Couldn't remove progress photos for deleted user %s", user_id)

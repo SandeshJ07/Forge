@@ -3,9 +3,11 @@ from datetime import datetime
 
 from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import select
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.core.database import Base
+from app.models.user import User
 from app.core.encrypted_types import EncryptedFloat, EncryptedInt, EncryptedJSON, EncryptedString
 
 
@@ -52,3 +54,9 @@ class UserProfile(Base):
     # taps "Create my plan", whether or not that generation then succeeds.
     # Encrypted: its free-text notes can mention injuries or health conditions.
     plan_preferences: Mapped[dict | None] = mapped_column(EncryptedJSON)
+
+    # Read-only, from users: whether the account has a password (Google-only
+    # accounts don't). The app uses it to ask for the right re-confirmation.
+    has_password: Mapped[bool] = column_property(
+        select(User.password_hash.is_not(None)).where(User.id == user_id).correlate_except(User).scalar_subquery()
+    )
