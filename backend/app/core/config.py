@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # separated; empty disables Google sign-in.
     google_client_ids: str = ""
 
+    # Progress photos are switched off for now (code kept). While false, every
+    # /measurements/photos endpoint answers 404 and nothing is written to storage.
+    progress_photos_enabled: bool = False
+
     storage_dir: str = "storage"
     cors_origins: str = "http://localhost:8081,http://localhost:19006"
 

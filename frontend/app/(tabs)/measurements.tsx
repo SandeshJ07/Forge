@@ -11,6 +11,7 @@ import { AddMeasurementForm } from '@/components/AddMeasurementForm';
 import { ProgressPhotoGrid } from '@/components/ProgressPhotoGrid';
 import { useAddProgressPhoto, useMeasurements, useMeasurementTypes, useProgressPhotos } from '@/hooks/useMeasurements';
 import type { MeasurementType } from '@/types/database';
+import { FEATURES } from '@/constants/features';
 import { colors, spacing } from '@/constants/theme';
 
 const PRESET_TYPES: MeasurementType[] = ['body_weight', 'chest', 'waist', 'left_arm', 'right_arm'];
@@ -27,7 +28,10 @@ export default function MeasurementsScreen() {
 
   return (
     <ScreenContainer>
-      <ScreenHeader title="Progress" subtitle="Body measurements and progress photos" />
+      <ScreenHeader
+        title="Progress"
+        subtitle={FEATURES.progressPhotos ? 'Body measurements and progress photos' : 'Body measurements'}
+      />
 
       <ChipScroller>
         {allTypes.map((type) => (
@@ -49,18 +53,20 @@ export default function MeasurementsScreen() {
         <AddMeasurementForm type={selectedType} />
       </Card>
 
-      <Card>
-        <View style={styles.photosHeader}>
-          <Text style={styles.cardTitle}>Progress photos</Text>
-          <Button
-            label="Add photo"
-            variant="secondary"
-            onPress={() => addPhoto.mutate(new Date().toISOString().slice(0, 10))}
-            loading={addPhoto.isPending}
-          />
-        </View>
-        <ProgressPhotoGrid photos={photos ?? []} />
-      </Card>
+      {FEATURES.progressPhotos ? (
+        <Card>
+          <View style={styles.photosHeader}>
+            <Text style={styles.cardTitle}>Progress photos</Text>
+            <Button
+              label="Add photo"
+              variant="secondary"
+              onPress={() => addPhoto.mutate(new Date().toISOString().slice(0, 10))}
+              loading={addPhoto.isPending}
+            />
+          </View>
+          <ProgressPhotoGrid photos={photos ?? []} />
+        </Card>
+      ) : null}
     </ScreenContainer>
   );
 }
