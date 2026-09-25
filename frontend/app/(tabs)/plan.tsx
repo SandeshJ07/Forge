@@ -2,6 +2,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
@@ -64,6 +65,21 @@ export default function ExerciseGroupsScreen() {
 
   return (
     <ScreenContainer>
+      <ScreenHeader
+        title="Plan"
+        subtitle={latestPlan ? `Your exercise groups · created ${formatDay(latestPlan.created_at)}` : 'Your exercise groups'}
+        right={
+          latestPlan ? (
+            <Button
+              label={isGenerating ? 'Generating…' : 'New plan'}
+              size="small"
+              onPress={handleGenerate}
+              disabled={isGenerating}
+            />
+          ) : null
+        }
+      />
+
       {isGenerating ? (
         <Card style={styles.statusCard}>
           <ActivityIndicator color={colors.primary} />
@@ -98,6 +114,9 @@ export default function ExerciseGroupsScreen() {
             <Text style={styles.mutedText}>
               It's been {CADENCE_PERIOD[cadence]} since these were made. New ones will reflect your latest progress.
             </Text>
+            <Text style={styles.link} onPress={handleGenerate} accessibilityRole="link">
+              Make a new plan
+            </Text>
           </View>
         </Card>
       ) : null}
@@ -116,24 +135,15 @@ export default function ExerciseGroupsScreen() {
 
       {latestPlan ? (
         <>
-          <View style={styles.metaRow}>
-            <Text style={styles.hint}>Created {formatDay(latestPlan.created_at)}</Text>
-            <Text style={styles.link} onPress={() => router.push('/plan/history')} accessibilityRole="link">
-              History
-            </Text>
-          </View>
           <PlanView plan={latestPlan.plan} onStartGroup={handleStart} startLabel={startLabel} />
-          <Button
-            label={isGenerating ? 'Generating…' : 'Regenerate groups'}
-            variant={refreshDue ? 'primary' : 'secondary'}
-            onPress={handleGenerate}
-            disabled={isGenerating}
-          />
           {!refreshDue && daysUntil !== null ? (
             <Text style={[styles.hint, styles.centered]}>
               Next refresh reminder in {daysUntil} day{daysUntil === 1 ? '' : 's'}. You can change this in Settings.
             </Text>
           ) : null}
+          <Text style={[styles.link, styles.centered]} onPress={() => router.push('/plan/history')} accessibilityRole="link">
+            Past plans
+          </Text>
         </>
       ) : null}
     </ScreenContainer>
@@ -152,11 +162,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     cursor: 'pointer',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   statusCard: {
     flexDirection: 'row',

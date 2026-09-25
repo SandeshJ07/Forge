@@ -1,17 +1,15 @@
 import { useMemo, useState } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/ui/Card';
-import { buildCalendarWeeks, dayKey, startOfDay, summarizeStreak } from '@/lib/streak';
+import { buildMonthWeeks, dayKey, startOfDay, summarizeStreak } from '@/lib/streak';
 import { formatDay } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 
-const MIN_WEEKS = 16;
-const MAX_WEEKS = 52;
-const MAX_CELL = 22;
-const CELL_GAP = 3;
-const DAY_LABEL_WIDTH = 26;
-const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'];
+const CELL_GAP = 6;
+/** Caps the calendar's width on wide cards so cells stay day-sized, not tiles. */
+const MAX_GRID_WIDTH = 420;
+const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /**
  * One-hue sequential ramp (magnitude = workouts that day), stepped from the
@@ -25,18 +23,17 @@ function levelFor(count: number): number {
 }
 
 export function StreakCard({ workoutDates }: { workoutDates: string[] }) {
-  const [gridWidth, setGridWidth] = useState(0);
   const [selected, setSelected] = useState<Date | null>(null);
 
   const today = startOfDay(new Date());
   const summary = useMemo(() => summarizeStreak(workoutDates), [workoutDates]);
-  // Phones show 16 weeks with cells shrunk to fit; wider cards show more
-  // history at full cell size instead of leaving the grid half-empty.
-  const usable = gridWidth - DAY_LABEL_WIDTH;
-  const weeksShown =
-    gridWidth > 0 ? Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, Math.floor(usable / (MAX_CELL + CELL_GAP)))) : MIN_WEEKS;
-  const weeks = useMemo(() => buildCalendarWeeks(weeksShown), [weeksShown]);
-  const cellSize = gridWidth > 0 ? Math.min(MAX_CELL, Math.floor((usable - CELL_GAP * weeksShown) / weeksShown)) : 0;
+  // Just the current month (at most 42 slots, cheap to rebuild); the streak
+  // number above still counts every week.
+  const weeks = buildMonthWeeks(today);
+  const monthName = today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const workoutsThisMonth = weeks
+    .flat()
+    .reduce((n, day) => n + (day ? (summary.countsByDay.get(dayKey(day)) ?? 0) : 0), 0);
 
   const { currentWeeks, bestWeeks, thisWeekDone, countsByDay } = summary;
   const status = thisWeekDone
@@ -67,58 +64,54 @@ export function StreakCard({ workoutDates }: { workoutDates: string[] }) {
         </View>
       </View>
 
-      <View
-        style={styles.grid}
-        onLayout={(e: LayoutChangeEvent) => setGridWidth(e.nativeEvent.layout.width)}
-        accessibilityLabel={`Workout calendar for the last ${weeksShown} weeks`}
-      >
-        {cellSize > 0 ? (
-          <>
-            <View style={[styles.dayLabels, { width: DAY_LABEL_WIDTH, gap: CELL_GAP }]}>
-              {DAY_LABELS.map((label, i) => (
-                <Text key={i} style={[styles.dayLabel, { height: cellSize, lineHeight: cellSize }]}>
-                  {label}
-                </Text>
-              ))}
-            </View>
-            {weeks.map((week, w) => (
-              <View key={w} style={{ gap: CELL_GAP }}>
-                {week.map((day) => {
-                  const isFuture = day.getTime() > today.getTime();
-                  const count = countsByDay.get(dayKey(day)) ?? 0;
-                  const isToday = day.getTime() === today.getTime();
-                  const isSelected = selected?.getTime() === day.getTime();
-                  return (
-                    <Pressable
-                      key={day.getTime()}
-                      disabled={isFuture}
-                      onPress={() => setSelected(isSelected ? null : day)}
-                      onHoverIn={() => setSelected(day)}
-                      accessibilityLabel={`${formatDay(day)}: ${count} workout${count === 1 ? '' : 's'}`}
-                      style={[
-                        styles.cell,
-                        {
-                          width: cellSize,
-                          height: cellSize,
-                          backgroundColor: isFuture ? 'transparent' : LEVEL_COLORS[levelFor(count)],
-                        },
-                        isToday && styles.cellToday,
-                        isSelected && styles.cellSelected,
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            ))}
-          </>
-        ) : null}
+      <View style={styles.calendar} accessibilityLabel={`Workout calendar for ${monthName}`}>
+        <Text style={styles.monthName}>{monthName}</Text>
+        <View style={styles.week}>
+          {WEEKDAY_LABELS.map((label, i) => (
+            <Text key={i} style={styles.weekdayLabel}>
+              {label}
+            </Text>
+          ))}
+        </View>
+        {weeks.map((week, w) => (
+          <View key={w} style={styles.week}>
+            {week.map((day, d) => {
+              if (!day) return <View key={d} style={styles.cellSlot} />;
+              const isFuture = day.getTime() > today.getTime();
+              const count = countsByDay.get(dayKey(day)) ?? 0;
+              const level = levelFor(count);
+              const isToday = day.getTime() === today.getTime();
+              const isSelected = selected?.getTime() === day.getTime();
+              return (
+                <Pressable
+                  key={d}
+                  disabled={isFuture}
+                  onPress={() => setSelected(isSelected ? null : day)}
+                  onHoverIn={() => setSelected(day)}
+                  accessibilityLabel={`${formatDay(day)}: ${count} workout${count === 1 ? '' : 's'}`}
+                  style={[
+                    styles.cellSlot,
+                    styles.cell,
+                    { backgroundColor: isFuture ? 'transparent' : LEVEL_COLORS[level] },
+                    isToday && styles.cellToday,
+                    isSelected && styles.cellSelected,
+                  ]}
+                >
+                  <Text style={[styles.cellText, level > 0 && styles.cellTextActive, isFuture && styles.cellTextFuture]}>
+                    {day.getDate()}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
       </View>
 
       <View style={styles.footerRow}>
         <Text style={styles.readout} numberOfLines={1}>
           {selected
             ? `${formatDay(selected)} · ${selectedCount ? `${selectedCount} workout${selectedCount === 1 ? '' : 's'}` : 'Rest day'}`
-            : `Last ${weeksShown} weeks · tap a day for details`}
+            : `${workoutsThisMonth} workout${workoutsThisMonth === 1 ? '' : 's'} this month · tap a day`}
         </Text>
         <View style={styles.legend} accessibilityLabel="Legend: none, one, two or more workouts">
           <Text style={styles.legendText}>Less</Text>
@@ -181,21 +174,49 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
-  grid: {
+  calendar: {
+    gap: CELL_GAP,
+    width: '100%',
+    maxWidth: MAX_GRID_WIDTH,
+    alignSelf: 'center',
+  },
+  monthName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  week: {
     flexDirection: 'row',
     gap: CELL_GAP,
-    minHeight: 7 * 12,
   },
-  dayLabels: {
-    marginRight: 0,
-  },
-  dayLabel: {
+  weekdayLabel: {
+    flex: 1,
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  cellSlot: {
+    flex: 1,
+    aspectRatio: 1,
+    maxHeight: 44,
   },
   cell: {
-    borderRadius: 4,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     cursor: 'pointer',
+  },
+  cellText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cellTextActive: {
+    color: '#fff',
+  },
+  cellTextFuture: {
+    opacity: 0.4,
   },
   cellToday: {
     borderWidth: 1.5,

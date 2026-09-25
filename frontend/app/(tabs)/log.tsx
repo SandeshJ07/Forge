@@ -24,7 +24,7 @@ export default function LogScreen() {
       <ScreenHeader
         title="Log"
         subtitle="Your training history"
-        right={<Button label="Log workout" onPress={() => router.push('/workout/new')} />}
+        right={<Button label="Log workout" size="small" onPress={() => router.push('/workout/new')} />}
       />
 
       <FlatList

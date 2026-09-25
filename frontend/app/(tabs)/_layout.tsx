@@ -1,3 +1,4 @@
+import { Text } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,7 +21,8 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        // Six tabs share a 360–390px phone: no side padding, so "Exercises" fits.
+        tabBarItemStyle: { paddingHorizontal: 0 },
         tabBarStyle: isDesktopWeb
           ? { display: 'none' }
           : {
@@ -39,6 +41,10 @@ export default function TabsLayout() {
           name={item.name}
           options={{
             title: item.title,
+            // Own label: the default one adds margins and ellipsizes "Exercises" at 360px.
+            tabBarLabel: ({ color }) => (
+              <Text style={{ color, fontSize: 10.5, fontWeight: '600', letterSpacing: -0.1 }}>{item.title}</Text>
+            ),
             tabBarIcon: ({ focused, color }) => (
               <Ionicons name={focused ? item.iconActive : item.icon} size={22} color={color} />
             ),

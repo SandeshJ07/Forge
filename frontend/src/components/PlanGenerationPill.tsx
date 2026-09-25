@@ -14,7 +14,7 @@ const TAB_BAR_HEIGHT = 58;
  * Floating status for background plan generation, visible on every signed-in
  * screen: "Building your exercise groups…" while it runs, then "ready → View" or the
  * error with "Try again". Ready/failed only announce a job this session saw
- * start, so an old result never pops up on a fresh launch (the exercise groups screen shows it).
+ * start, so an old result never pops up on a fresh launch (the Plan tab shows it).
  */
 export function PlanGenerationPill() {
   const router = useRouter();
@@ -69,7 +69,7 @@ export function PlanGenerationPill() {
           <Pressable
             onPress={() => {
               dismiss();
-              router.push('/plan');
+              router.navigate('/plan');
             }}
             style={styles.action}
             accessibilityRole="button"

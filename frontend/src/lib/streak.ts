@@ -70,10 +70,18 @@ export function summarizeStreak(workoutDates: string[], now: Date = new Date()):
   return { currentWeeks, bestWeeks: Math.max(bestWeeks, currentWeeks), thisWeekDone, countsByDay };
 }
 
-/** Columns of 7 days (Mon→Sun), oldest week first, ending with the current week. */
-export function buildCalendarWeeks(weeks: number, now: Date = new Date()): Date[][] {
-  const firstWeek = addDays(startOfWeek(now), -7 * (weeks - 1));
-  return Array.from({ length: weeks }, (_, w) =>
-    Array.from({ length: 7 }, (_, d) => addDays(firstWeek, w * 7 + d))
-  );
+/**
+ * The month containing `now` as calendar rows of 7 (Mon→Sun). Slots before
+ * the 1st and after the last day are null so every row lines up.
+ */
+export function buildMonthWeeks(now: Date = new Date()): (Date | null)[][] {
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7; // Mon=0 … Sun=6
+  const slots: (Date | null)[] = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(now.getFullYear(), now.getMonth(), i + 1)),
+  ];
+  while (slots.length % 7) slots.push(null);
+  return Array.from({ length: slots.length / 7 }, (_, w) => slots.slice(w * 7, w * 7 + 7));
 }
