@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import distinct, select
 from sqlalchemy.orm import Session
 
@@ -50,7 +50,10 @@ def list_equipment_options(db: Session = Depends(get_db)) -> list[str]:
 
 @router.get("/{exercise_id}", response_model=ExerciseResponse)
 def get_exercise(exercise_id: UUID, db: Session = Depends(get_db)) -> Exercise:
-    return db.get(Exercise, exercise_id)
+    exercise = db.get(Exercise, exercise_id)
+    if exercise is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exercise not found")
+    return exercise
 
 
 @router.get("/feedback/all", response_model=list[ExerciseFeedbackResponse])
@@ -67,6 +70,9 @@ def set_feedback(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UserExerciseFeedback:
+    if db.get(Exercise, exercise_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exercise not found")
+
     feedback = db.get(UserExerciseFeedback, (current_user.id, exercise_id))
     if feedback is None:
         feedback = UserExerciseFeedback(user_id=current_user.id, exercise_id=exercise_id, rating=body.rating)

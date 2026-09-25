@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -32,4 +33,4 @@ class ExerciseFeedbackResponse(BaseModel):
 
 
 class SetExerciseFeedbackRequest(BaseModel):
-    rating: str
+    rating: Literal["like", "dislike", "neutral"]

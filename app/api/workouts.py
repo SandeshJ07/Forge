@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.models.exercise import Exercise
 from app.models.user import User
 from app.models.workout import Workout, WorkoutSet
 from app.schemas.workout import (
@@ -53,11 +54,17 @@ def log_manual_workout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> LogManualWorkoutResponse:
+    exercise_ids = {s.exercise_id for s in body.sets if s.exercise_id is not None}
+    known_ids = {row[0] for row in db.query(Exercise.id).filter(Exercise.id.in_(exercise_ids)).all()}
+    if known_ids != exercise_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown exercise in workout")
+
     workout = Workout(
         user_id=current_user.id,
         source="manual",
         title=body.title,
         date=body.date,
+        duration_seconds=body.duration_seconds,
         summary=f"{len(body.sets)} sets logged manually",
     )
     db.add(workout)
@@ -87,7 +94,7 @@ def log_manual_workout(
             date=body.date,
         )
         for s in body.sets
-        if s.weight_kg
+        if s.weight_kg and s.exercise_id
     ]
     new_pr_exercise_ids = update_personal_records(db, current_user.id, candidates) if candidates else []
 

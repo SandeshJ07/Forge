@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -24,6 +24,7 @@ class UserProfile(Base):
         ),
         CheckConstraint("birth_year between 1900 and 2100", name="user_profiles_birth_year_check"),
         CheckConstraint("height_cm between 50 and 300", name="user_profiles_height_cm_check"),
+        CheckConstraint("ai_provider in ('anthropic','gemini')", name="user_profiles_ai_provider_check"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -33,10 +34,17 @@ class UserProfile(Base):
     experience_level: Mapped[str | None] = mapped_column(String)
     equipment_access: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     unit_system: Mapped[str] = mapped_column(String, nullable=False, default="metric")
+    ai_provider: Mapped[str] = mapped_column(String, nullable=False, default="anthropic", server_default="anthropic")
     anthropic_api_key_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    gemini_api_key_set: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     include_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     plan_refresh_cadence: Mapped[str] = mapped_column(String, nullable=False, default="weekly")
     gender: Mapped[str | None] = mapped_column(String)
     birth_year: Mapped[int | None] = mapped_column(Integer)
     height_cm: Mapped[float | None] = mapped_column(Numeric)
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Last choices from the Plan preferences screen — saved the moment the user
+    # taps "Create my plan", whether or not that generation then succeeds.
+    plan_preferences: Mapped[dict | None] = mapped_column(JSONB)

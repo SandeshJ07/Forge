@@ -1,3 +1,4 @@
+from app.models.email_code import EmailCode
 from app.models.exercise import Exercise, UserExerciseFeedback
 from app.models.integration_token import IntegrationToken
 from app.models.measurement import Measurement, ProgressPhoto
@@ -8,6 +9,7 @@ from app.models.user import User
 from app.models.workout import Workout, WorkoutSet
 
 __all__ = [
+    "EmailCode",
     "Exercise",
     "UserExerciseFeedback",
     "IntegrationToken",

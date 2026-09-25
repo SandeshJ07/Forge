@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.deps import get_current_user
+from app.core.rate_limit import RateLimiter
 from app.core.security import (
     InvalidTokenError,
     create_access_token,
@@ -12,40 +15,139 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.schemas.auth import RefreshRequest, SignInRequest, SignUpRequest, TokenResponse
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    RefreshRequest,
+    ResendVerificationRequest,
+    ResetPasswordRequest,
+    SignInRequest,
+    SignUpRequest,
+    SignUpResponse,
+    TokenResponse,
+    UpdateUsernameRequest,
+    UsernameResponse,
+    VerifyEmailRequest,
+)
+from app.services.email import EmailSendError, send_password_reset_code, send_verification_code
+from app.services.email_codes import TooManyCodesRequested, create_code, verify_and_consume_code
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Per-IP limits on the unauthenticated routes. The code-checking routes are
+# also capped per code (see app/services/email_codes.py); these stop one
+# client hammering many accounts or passwords.
+sign_in_limit = RateLimiter("sign-in", max_requests=10, window_seconds=60)
+sign_up_limit = RateLimiter("sign-up", max_requests=5, window_seconds=600)
+code_check_limit = RateLimiter("code-check", max_requests=10, window_seconds=60)
+code_send_limit = RateLimiter("code-send", max_requests=5, window_seconds=600)
 
-@router.post("/sign-up", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def sign_up(body: SignUpRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    user = User(email=body.email.lower(), password_hash=hash_password(body.password))
+
+EMAIL_UNAVAILABLE = "We couldn't send the email right now. Please try again in a few minutes."
+
+
+def _send_code_quietly(db: Session, user: User, purpose: str, send) -> None:
+    """
+    For the resend/forgot routes, which answer 204 so they can't be used to
+    probe which emails have accounts: hitting the per-user code cap is
+    swallowed the same way a missing account is. A mail-server failure is
+    reported (503) though — otherwise the user waits for an email that
+    will never come.
+    """
+    try:
+        code = create_code(db, user.id, purpose)
+    except TooManyCodesRequested:
+        return
+    try:
+        send(user.email, code)
+    except EmailSendError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=EMAIL_UNAVAILABLE) from exc
+
+
+def _token_response(user: User) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+        user_id=user.id,
+        username=user.username,
+    )
+
+
+@router.post(
+    "/sign-up",
+    response_model=SignUpResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(sign_up_limit)],
+)
+def sign_up(body: SignUpRequest, db: Session = Depends(get_db)) -> SignUpResponse:
+    if db.query(User).filter(User.username == body.username).one_or_none() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken")
+
+    user = User(email=body.email.lower(), username=body.username, password_hash=hash_password(body.password))
     db.add(user)
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists") from exc
+        detail = "That username is already taken" if "username" in str(exc.orig) else "An account with this email already exists"
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
     db.refresh(user)
 
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-        user_id=user.id,
-    )
+    code = create_code(db, user.id, "verify_email")
+    try:
+        send_verification_code(user.email, code)
+    except EmailSendError as exc:
+        # Undo the sign-up rather than leave an unverified account the user can't
+        # finish (and can't re-register, since the email/username are now taken).
+        db.delete(user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We couldn't send your verification email, so your account wasn't created. "
+            "Please try again in a few minutes.",
+        ) from exc
+
+    return SignUpResponse(email=user.email)
 
 
-@router.post("/sign-in", response_model=TokenResponse)
-def sign_in(body: SignInRequest, db: Session = Depends(get_db)) -> TokenResponse:
+@router.post("/verify-email", response_model=TokenResponse, dependencies=[Depends(code_check_limit)])
+def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
-    if user is None or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
 
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-        user_id=user.id,
-    )
+    if not verify_and_consume_code(db, user.id, "verify_email", body.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    user.is_verified = True
+    db.commit()
+
+    return _token_response(user)
+
+
+@router.post(
+    "/resend-verification", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(code_send_limit)]
+)
+def resend_verification(body: ResendVerificationRequest, db: Session = Depends(get_db)) -> None:
+    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    # Deliberately silent on a missing/already-verified account — this
+    # response doesn't reveal whether the email exists, same reasoning as
+    # forgot-password below.
+    if user is not None and not user.is_verified:
+        _send_code_quietly(db, user, "verify_email", send_verification_code)
+
+
+@router.post("/sign-in", response_model=TokenResponse, dependencies=[Depends(sign_in_limit)])
+def sign_in(body: SignInRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    identifier = body.identifier.strip().lower()
+    user = db.query(User).filter(or_(User.email == identifier, User.username == body.identifier.strip())).one_or_none()
+
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    if not user.is_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email before signing in")
+
+    return _token_response(user)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -59,8 +161,53 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenRespons
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-        user_id=user.id,
-    )
+    return _token_response(user)
+
+
+@router.post(
+    "/forgot-password", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(code_send_limit)]
+)
+def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)) -> None:
+    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    # Always 204, whether or not the email exists — otherwise this endpoint
+    # becomes a way to check which emails have accounts.
+    if user is not None:
+        _send_code_quietly(db, user, "reset_password", send_password_reset_code)
+
+
+@router.post("/reset-password", response_model=TokenResponse, dependencies=[Depends(code_check_limit)])
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    if not verify_and_consume_code(db, user.id, "reset_password", body.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
+
+    return _token_response(user)
+
+
+@router.patch("/username", response_model=UsernameResponse)
+def update_username(
+    body: UpdateUsernameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UsernameResponse:
+    if body.username == current_user.username:
+        return UsernameResponse(username=current_user.username)
+
+    taken = db.query(User).filter(User.username == body.username, User.id != current_user.id).one_or_none()
+    if taken is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken")
+
+    current_user.username = body.username
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken") from exc
+
+    return UsernameResponse(username=current_user.username)

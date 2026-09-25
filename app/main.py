@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import anthropic_key, auth, exercises, measurements, personal_records, plans, profile, workouts
+from app.api import ai_keys, auth, exercises, measurements, personal_records, plans, profile, stats, workouts
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -26,8 +26,9 @@ app.include_router(exercises.router)
 app.include_router(workouts.router)
 app.include_router(measurements.router)
 app.include_router(personal_records.router)
-app.include_router(anthropic_key.router)
+app.include_router(ai_keys.router)
 app.include_router(plans.router)
+app.include_router(stats.router)
 
 
 @app.get("/health")

@@ -1,59 +1,161 @@
+import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.deps import get_current_user
 from app.models.plan import GeneratedPlan
+from app.models.profile import UserProfile
 from app.models.user import User
-from app.schemas.plan import GeneratedPlanResponse, SetPlanAcceptedRequest
-from app.services.anthropic_client import AnthropicRequestError
-from app.services.plan_generation import NoAnthropicKeyAvailable, PlanParseError, generate_plan_for_user
+from app.schemas.plan import GeneratePlanRequest, GeneratedPlanResponse, PlanGenerationStatus, SetPlanAcceptedRequest
+from app.services.ai_errors import AIRequestError
+from app.services.ai_providers import PROVIDER_NAMES
+from app.services.plan_generation import (
+    NoAIKeyAvailable,
+    PlanParseError,
+    generate_plan_for_user,
+    resolve_provider_and_key,
+)
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+logger = logging.getLogger(__name__)
 
 
-@router.post("/generate", response_model=GeneratedPlanResponse, status_code=status.HTTP_201_CREATED)
+# A generation that hasn't finished in this long was lost (e.g. server restart
+# mid-call) — the AI call itself times out well before this.
+STALE_AFTER = timedelta(minutes=6)
+
+
+async def _run_generation(plan_id: UUID, user_id: UUID, preferences: dict) -> None:
+    """Background task: does the (slow) AI call with its own DB session, then marks the row ready/failed."""
+    db = SessionLocal()
+    try:
+        try:
+            plan_json, source_summary = await generate_plan_for_user(db, user_id, preferences)
+        except (NoAIKeyAvailable, PlanParseError, AIRequestError) as exc:
+            _finish(db, plan_id, status="failed", error=str(exc))
+            return
+        except Exception:  # noqa: BLE001 — never leave a row stuck in 'generating'
+            logger.exception("Plan generation crashed for plan %s", plan_id)
+            _finish(db, plan_id, status="failed", error="Something went wrong while building your plan. Please try again.")
+            return
+        _finish(db, plan_id, status="ready", plan=plan_json, source_summary=source_summary)
+    finally:
+        db.close()
+
+
+def _finish(db: Session, plan_id: UUID, **fields) -> None:
+    db.rollback()  # discard anything half-done by the failed attempt
+    plan = db.get(GeneratedPlan, plan_id)
+    if plan is None:  # user deleted meanwhile
+        return
+    for key, value in fields.items():
+        setattr(plan, key, value)
+    db.commit()
+
+
+def _latest_job(db: Session, user_id: UUID) -> GeneratedPlan | None:
+    # Expire any of this user's jobs lost mid-generation (e.g. server restart), not just the newest.
+    db.query(GeneratedPlan).filter(
+        GeneratedPlan.user_id == user_id,
+        GeneratedPlan.status == "generating",
+        GeneratedPlan.created_at < datetime.now(timezone.utc) - STALE_AFTER,
+    ).update(
+        {GeneratedPlan.status: "failed", GeneratedPlan.error: "Plan generation was interrupted. Please try again."},
+        synchronize_session=False,
+    )
+    db.commit()
+    return (
+        db.query(GeneratedPlan)
+        .filter(GeneratedPlan.user_id == user_id)
+        .order_by(GeneratedPlan.created_at.desc())
+        .first()
+    )
+
+
+def _ready_plans(db: Session, user_id: UUID):
+    return (
+        db.query(GeneratedPlan)
+        .filter(GeneratedPlan.user_id == user_id, GeneratedPlan.status == "ready")
+        .order_by(GeneratedPlan.created_at.desc())
+    )
+
+
+@router.post("/generate", response_model=GeneratedPlanResponse, status_code=status.HTTP_202_ACCEPTED)
 async def generate_plan(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    body: GeneratePlanRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> GeneratedPlan:
     """
-    The only endpoint that calls the Anthropic API. Only ever triggered by
-    an explicit "Generate"/"Regenerate" tap in the app — never on a schedule.
-    """
-    try:
-        plan_json, source_summary = await generate_plan_for_user(db, current_user.id)
-    except NoAnthropicKeyAvailable as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except (PlanParseError, AnthropicRequestError) as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    Starts plan generation and returns immediately (202) with a 'generating'
+    placeholder row; the AI call runs as a background task so the user can
+    keep using the app. Poll GET /plans/generation for progress.
 
-    plan = GeneratedPlan(user_id=current_user.id, plan=plan_json, source_summary=source_summary, accepted=False)
+    The only endpoint that calls an AI provider (Anthropic or Gemini, per the
+    user's ai_provider), and only ever from an explicit user action — never on
+    a schedule.
+    """
+    preferences = (body or GeneratePlanRequest()).preferences.model_dump(exclude_none=True)
+
+    # Save the choices first, so they're kept (and pre-filled next time) even if
+    # this request is then rejected or the generation fails.
+    profile = db.get(UserProfile, current_user.id)
+    if profile is None:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+    profile.plan_preferences = preferences
+    db.commit()
+
+    job = _latest_job(db, current_user.id)
+    if job is not None and job.status == "generating":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A plan is already being generated.")
+
+    # Fail fast on a missing key instead of queueing a job that can only fail.
+    provider, api_key = resolve_provider_and_key(db, current_user.id)
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No {PROVIDER_NAMES[provider]} API key available. Add your own key in Settings, "
+            "switch AI provider, or configure a shared key on the server.",
+        )
+
+    plan = GeneratedPlan(
+        user_id=current_user.id,
+        plan={},
+        source_summary={"preferences": preferences},
+        accepted=False,
+        status="generating",
+    )
     db.add(plan)
     db.commit()
     db.refresh(plan)
+    background_tasks.add_task(_run_generation, plan.id, current_user.id, preferences)
     return plan
+
+
+@router.get("/generation", response_model=PlanGenerationStatus)
+def get_generation_status(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> PlanGenerationStatus:
+    job = _latest_job(db, current_user.id)
+    if job is None:
+        return PlanGenerationStatus(status="idle")
+    return PlanGenerationStatus(status=job.status, plan_id=job.id, error=job.error, started_at=job.created_at)
 
 
 @router.get("", response_model=list[GeneratedPlanResponse])
 def list_plans(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[GeneratedPlan]:
-    return (
-        db.query(GeneratedPlan)
-        .filter(GeneratedPlan.user_id == current_user.id)
-        .order_by(GeneratedPlan.created_at.desc())
-        .all()
-    )
+    return _ready_plans(db, current_user.id).all()
 
 
 @router.get("/latest", response_model=GeneratedPlanResponse | None)
 def get_latest_plan(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> GeneratedPlan | None:
-    return (
-        db.query(GeneratedPlan)
-        .filter(GeneratedPlan.user_id == current_user.id)
-        .order_by(GeneratedPlan.created_at.desc())
-        .first()
-    )
+    return _ready_plans(db, current_user.id).first()
 
 
 @router.patch("/{plan_id}", response_model=GeneratedPlanResponse)

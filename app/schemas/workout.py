@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkoutResponse(BaseModel):
@@ -38,17 +38,20 @@ class WorkoutSetResponse(BaseModel):
 
 
 class ManualSetInput(BaseModel):
-    exercise_id: UUID
-    exercise_name: str
-    weight_kg: float | None = None
-    reps: int | None = None
-    rpe: float | None = None
+    # None for exercises that aren't in the glossary (e.g. an AI-planned movement
+    # with no exact match) — the set is still logged by name, just without PR tracking.
+    exercise_id: UUID | None = None
+    exercise_name: str = Field(min_length=1, max_length=200)
+    weight_kg: float | None = Field(default=None, ge=0, le=1000)
+    reps: int | None = Field(default=None, ge=0, le=1000)
+    rpe: float | None = Field(default=None, ge=0, le=10)
 
 
 class LogManualWorkoutRequest(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=120)
     date: datetime
-    sets: list[ManualSetInput]
+    sets: list[ManualSetInput] = Field(min_length=1, max_length=500)
+    duration_seconds: int | None = Field(default=None, ge=0, le=24 * 3600)
 
 
 class LogManualWorkoutResponse(BaseModel):

@@ -11,13 +11,15 @@ from app.core.database import Base
 class IntegrationToken(Base):
     """
     Holds secrets that must never reach the client (currently just the
-    user's optional Anthropic API key). Deliberately has no corresponding
+    user's optional Anthropic / Gemini API keys). Deliberately has no corresponding
     Pydantic response schema that includes access_token — only this
     backend's own services read it.
     """
 
     __tablename__ = "integration_tokens"
-    __table_args__ = (CheckConstraint("provider = 'anthropic'", name="integration_tokens_provider_check"),)
+    __table_args__ = (
+        CheckConstraint("provider in ('anthropic', 'gemini')", name="integration_tokens_provider_check"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True

@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -12,13 +14,16 @@ class UserProfileResponse(BaseModel):
     experience_level: str | None
     equipment_access: list[str] | None
     unit_system: str
+    ai_provider: str
     anthropic_api_key_set: bool
+    gemini_api_key_set: bool
     include_warmup: bool
     plan_refresh_cadence: str
     gender: str | None
     birth_year: int | None
     height_cm: float | None
     onboarded_at: datetime | None
+    plan_preferences: dict[str, Any] | None = None
 
 
 class UserProfileUpdate(BaseModel):
@@ -26,6 +31,7 @@ class UserProfileUpdate(BaseModel):
     experience_level: str | None = None
     equipment_access: list[str] | None = None
     unit_system: str | None = None
+    ai_provider: Literal["anthropic", "gemini"] | None = None
     include_warmup: bool | None = None
     plan_refresh_cadence: str | None = None
     gender: str | None = None
