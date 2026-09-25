@@ -11,7 +11,6 @@ export const ONBOARDING_IMAGES = {
   experience: require('../../assets/onboarding/experience.jpg'),
   equipment: require('../../assets/onboarding/equipment.jpg'),
   schedule: require('../../assets/onboarding/schedule.jpg'),
-  ai: require('../../assets/onboarding/ai.jpg'),
 } satisfies Record<string, ImageSourcePropType>;
 
 export type OnboardingImageName = keyof typeof ONBOARDING_IMAGES;

@@ -10,11 +10,11 @@ import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
 import { MultiSelect } from '@/components/ui/MultiSelect';
-import { useGeneratePlan, useLatestPlan, usePlanGeneration } from '@/hooks/usePlans';
+import { useGeneratePlan, useLatestPlan, usePlanGeneration, usePlanUsage } from '@/hooks/usePlans';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { providerInfo } from '@/constants/aiProviders';
 import { ALL_EQUIPMENT, EQUIPMENT_GROUPS, defaultEquipmentFor } from '@/constants/equipmentCatalog';
-import type { Muscle, PlanPreferences, Weekday } from '@/types/database';
+import type { Muscle, PlanPreferences, PlanUsage, Weekday } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
 const WEEKDAYS: { value: Weekday; short: string; long: string }[] = [
@@ -66,6 +66,8 @@ export default function PlanPreferencesScreen() {
   const generatePlan = useGeneratePlan();
   const { data: generation } = usePlanGeneration();
   const alreadyGenerating = generation?.status === 'generating';
+  const { data: usage } = usePlanUsage();
+  const outOfGenerations = usage?.remaining === 0;
 
   const [days, setDays] = useState<Weekday[]>(DEFAULT_DAYS);
   const [dayFocus, setDayFocus] = useState<Partial<Record<Weekday, Muscle[]>>>({});
@@ -142,7 +144,8 @@ export default function PlanPreferencesScreen() {
     }
   }
 
-  const provider = providerInfo(profile?.ai_provider);
+  // The server may fall back to the provider it has a key for; name the one that will actually run.
+  const provider = providerInfo(usage?.provider ?? profile?.ai_provider);
 
   return (
     <ScreenContainer>
@@ -150,6 +153,8 @@ export default function PlanPreferencesScreen() {
         Tell {provider.name} how you want to train this week. Anything you skip, it decides based on your goal and
         history.
       </Text>
+
+      {usage ? <UsageCard usage={usage} onOpenSettings={() => router.push('/settings')} /> : null}
 
       <Section title="Which days can you train?" hint={`${days.length} day${days.length === 1 ? '' : 's'} a week`}>
         <ChipGroup>
@@ -256,6 +261,10 @@ export default function PlanPreferencesScreen() {
         <Text style={styles.generatingHint}>
           Groups are already being built — you'll be able to start another once it's done.
         </Text>
+      ) : outOfGenerations ? (
+        <Text style={styles.generatingHint}>
+          No generations left today. Come back after midnight, or add your own API key in Settings.
+        </Text>
       ) : (
         <Text style={styles.generatingHint}>
           Takes 15–30 seconds. You can keep using the app while {provider.name} works on it.
@@ -266,9 +275,60 @@ export default function PlanPreferencesScreen() {
         label={latestPlan ? 'Generate new groups' : 'Create exercise groups'}
         onPress={handleGenerate}
         loading={generatePlan.isPending}
-        disabled={!days.length || alreadyGenerating}
+        disabled={!days.length || alreadyGenerating || outOfGenerations}
       />
     </ScreenContainer>
+  );
+}
+
+function formatResetTime(iso: string): string {
+  const reset = new Date(iso);
+  const time = reset.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return reset.getHours() === 0 && reset.getMinutes() === 0 ? 'midnight' : time;
+}
+
+/** Today's generations on the app's shared key, with the way out (own key) when they run low. */
+function UsageCard({ usage, onOpenSettings }: { usage: PlanUsage; onOpenSettings: () => void }) {
+  const provider = providerInfo(usage.provider);
+  if (usage.own_key || usage.limit === null || usage.remaining === null) {
+    return (
+      <Card style={styles.usageCard}>
+        <View style={styles.usageHead}>
+          <Ionicons name="key-outline" size={18} color={colors.success} />
+          <Text style={styles.usageTitle}>Using your own {provider.name} key</Text>
+        </View>
+        <Text style={styles.usageText}>No daily limit — generations are billed to your {provider.company} account.</Text>
+      </Card>
+    );
+  }
+  const empty = usage.remaining === 0;
+  return (
+    <Card style={[styles.usageCard, empty && styles.usageCardEmpty]}>
+      <View style={styles.usageHead}>
+        <Ionicons name="flash-outline" size={18} color={empty ? colors.warning : colors.primary} />
+        <Text style={[styles.usageTitle, styles.flex]}>
+          {usage.remaining} of {usage.limit} generations left today
+        </Text>
+      </View>
+      <View
+        style={styles.meter}
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel={`${usage.used} of ${usage.limit} used today`}
+        accessibilityValue={{ min: 0, max: usage.limit, now: usage.used }}
+      >
+        {Array.from({ length: usage.limit }, (_, i) => (
+          <View key={i} style={[styles.meterSegment, i < usage.used && styles.meterSegmentUsed]} />
+        ))}
+      </View>
+      <Text style={styles.usageText}>
+        Each generation uses one. The count resets at {formatResetTime(usage.resets_at)}. For more, use your own AI key —{' '}
+        <Text style={styles.link} onPress={onOpenSettings} accessibilityRole="link">
+          add it in Settings
+        </Text>
+        .
+      </Text>
+    </Card>
   );
 }
 
@@ -362,6 +422,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
     lineHeight: 20,
+  },
+  usageCard: {
+    gap: spacing.sm,
+    borderColor: colors.primaryMuted,
+  },
+  usageCardEmpty: {
+    borderColor: 'rgba(255,176,32,0.4)',
+  },
+  usageHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  usageTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  usageText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  meter: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  meterSegment: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  meterSegmentUsed: {
+    backgroundColor: colors.surfaceAlt,
   },
   generatingHint: {
     color: colors.textMuted,

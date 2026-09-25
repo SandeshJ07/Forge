@@ -1,7 +1,9 @@
 import json
 import random
 import re
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import UUID
 
 from sqlalchemy import func
@@ -12,6 +14,7 @@ from app.models.exercise import Exercise, UserExerciseFeedback
 from app.models.measurement import Measurement
 from app.models.integration_token import IntegrationToken
 from app.models.personal_record import PersonalRecord
+from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.workout import Workout, WorkoutSet
 from app.services.equipment_catalog import display_names, glossary_equipment
@@ -52,12 +55,65 @@ class PlanParseError(Exception):
     pass
 
 
-def resolve_provider_and_key(db: Session, user_id: UUID) -> tuple[AIProvider, str | None]:
-    """The user's chosen provider, with their own key for it if they've added one, else the server's shared key."""
+@dataclass
+class AIAccess:
+    provider: AIProvider
+    api_key: str | None
+    # True when the key is the user's own — no daily limit applies.
+    own_key: bool
+
+
+def resolve_ai_access(db: Session, user_id: UUID) -> AIAccess:
+    """
+    The user's own key for their chosen provider if they've added one; else the
+    server's shared key for it; else the shared key of the other provider, so
+    users who never picked a provider still work with whichever key the server has.
+    """
     profile = db.get(UserProfile, user_id)
     provider: AIProvider = profile.ai_provider if profile and profile.ai_provider in ("anthropic", "gemini") else "anthropic"
     token = db.get(IntegrationToken, (user_id, provider))
-    return provider, (token.access_token if token is not None else shared_key_for(provider))
+    if token is not None:
+        return AIAccess(provider, token.access_token, own_key=True)
+    if settings.shared_key_daily_plan_limit > 0:
+        other: AIProvider = "gemini" if provider == "anthropic" else "anthropic"
+        for candidate in (provider, other):
+            if shared_key_for(candidate):
+                return AIAccess(candidate, shared_key_for(candidate), own_key=False)
+    return AIAccess(provider, None, own_key=False)
+
+
+def resolve_provider_and_key(db: Session, user_id: UUID) -> tuple[AIProvider, str | None]:
+    access = resolve_ai_access(db, user_id)
+    return access.provider, access.api_key
+
+
+def local_day_start(tz: str) -> datetime:
+    """Midnight today in the user's timezone (UTC for unknown names), as an aware datetime."""
+    try:
+        zone = ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = ZoneInfo("UTC")
+    now = datetime.now(zone)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def shared_key_generations_since(db: Session, user_id: UUID, since: datetime) -> int:
+    """Shared-key generations that count toward the limit: started or succeeded (failed ones are free)."""
+    return (
+        db.query(func.count(GeneratedPlan.id))
+        .filter(
+            GeneratedPlan.user_id == user_id,
+            GeneratedPlan.used_shared_key.is_(True),
+            GeneratedPlan.status != "failed",
+            GeneratedPlan.created_at >= since,
+        )
+        .scalar()
+    )
+
+
+def next_local_midnight(day_start: datetime) -> datetime:
+    # Adding a day to the wall-clock midnight handles DST (the zone recomputes the offset).
+    return (day_start.replace(tzinfo=None) + timedelta(days=1)).replace(tzinfo=day_start.tzinfo)
 
 
 def _build_prompt_input(db: Session, user_id: UUID, plan_equipment: list[str] | None = None) -> PlanGenerationInput:

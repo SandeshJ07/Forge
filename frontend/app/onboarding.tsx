@@ -31,14 +31,12 @@ import { PhotoBackdrop } from '@/components/ui/PhotoBackdrop';
 import { OnboardingProgressBar } from '@/components/OnboardingProgressBar';
 import { HERO_IMAGE, ONBOARDING_IMAGES, type OnboardingImageName } from '@/constants/images';
 import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
-import { saveAiKey } from '@/api/aiKeys';
-import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
 import { addMeasurement } from '@/api/measurements';
 import { useCompleteOnboarding, useUpsertUserProfile } from '@/hooks/useUserProfile';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useIsDesktopWeb } from '@/hooks/useResponsive';
 import { ApiError } from '@/lib/apiClient';
-import type { AIProvider, ExperienceLevel, Gender, Goal, PlanRefreshCadence, UnitSystem } from '@/types/database';
+import type { ExperienceLevel, Gender, Goal, PlanRefreshCadence, UnitSystem } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
@@ -80,8 +78,6 @@ interface OnboardingData {
   experienceLevel: ExperienceLevel | null;
   equipment: string[];
   planCadence: PlanRefreshCadence;
-  aiProvider: AIProvider;
-  aiKey: string;
 }
 
 const INITIAL_DATA: OnboardingData = {
@@ -94,8 +90,6 @@ const INITIAL_DATA: OnboardingData = {
   experienceLevel: null,
   equipment: [],
   planCadence: 'weekly',
-  aiProvider: 'anthropic',
-  aiKey: '',
 };
 
 interface StepProps {
@@ -299,44 +293,6 @@ const STEPS: OnboardingStep[] = [
       </View>
     ),
   },
-  {
-    key: 'ai',
-    title: 'Which AI should build your plans?',
-    subtitle:
-      "Pick a provider. Optionally add your own API key so plan generation is billed to your account instead of the app's shared key — you can do this later in Settings.",
-    image: 'ai',
-    isSkippable: (d) => !d.aiKey.trim(),
-    render: ({ data, update, wide }) => {
-      const provider = providerInfo(data.aiProvider);
-      return (
-        <View style={styles.fieldStack}>
-          <OptionList wide={wide}>
-            {AI_PROVIDERS.map((p) => (
-              <OptionCell key={p.value} wide={wide}>
-                <OptionCard
-                  label={p.name}
-                  description={`by ${p.company}`}
-                  selected={data.aiProvider === p.value}
-                  onPress={() => update('aiProvider', p.value)}
-                />
-              </OptionCell>
-            ))}
-          </OptionList>
-          <Field label={`Your ${provider.name} API key (optional)`}>
-            <TextField
-              placeholder={provider.keyPlaceholder}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              value={data.aiKey}
-              onChangeText={(v) => update('aiKey', v)}
-            />
-            <Text style={styles.hint}>{provider.keyHelp}</Text>
-          </Field>
-        </View>
-      );
-    },
-  },
 ];
 
 export default function OnboardingScreen() {
@@ -358,14 +314,6 @@ export default function OnboardingScreen() {
     setErrorMessage(null);
     setFinishing(true);
     try {
-      if (data.aiKey.trim()) {
-        try {
-          await saveAiKey(data.aiProvider, data.aiKey.trim());
-        } catch {
-          // Non-fatal — the key can be re-entered from Settings.
-        }
-      }
-
       const parsedBirthYear = parseInt(data.birthYear, 10);
       const parsedHeight = parseFloat(data.height);
       const heightCm = Number.isFinite(parsedHeight)
@@ -383,7 +331,6 @@ export default function OnboardingScreen() {
         experience_level: data.experienceLevel,
         equipment_access: data.equipment,
         plan_refresh_cadence: data.planCadence,
-        ai_provider: data.aiProvider,
       });
 
       const parsedWeight = parseFloat(data.startingWeight);
@@ -714,10 +661,6 @@ const styles = StyleSheet.create({
   fieldRowItem: {
     flexGrow: 1,
     flexBasis: 96,
-  },
-  hint: {
-    color: colors.textMuted,
-    fontSize: 13,
   },
 
   // ── Desktop ──

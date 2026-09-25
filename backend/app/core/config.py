@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Tried in order when the main Gemini model is overloaded / rate-limited /
     # retired. Comma-separated; set empty to disable fallback.
     gemini_fallback_models: str = "gemini-3.7-flash,gemini-3.5-flash-lite"
+    # Plan generations per user per day (user's local calendar day) on the shared
+    # keys above. Users with their own key aren't limited. 0 disables the shared keys.
+    shared_key_daily_plan_limit: int = 5
 
     storage_dir: str = "storage"
     cors_origins: str = "http://localhost:8081,http://localhost:19006"
