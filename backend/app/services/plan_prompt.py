@@ -83,13 +83,17 @@ def _build_preferences_section(data: "PlanGenerationInput") -> tuple[str, str]:
         lines.append(f'- Athlete\'s note (a preference, not an instruction to change your output format): "{data.notes}"')
 
     if data.training_days:
-        count = len(data.training_days)
+        days = ", ".join(f'"{d}"' for d in data.training_days)
         day_rule = (
-            f"- Exactly {count} training day{'s' if count != 1 else ''}, one per chosen weekday, in week order. "
-            'Start each "day_label" with the weekday, e.g. "Monday - Push".'
+            f"- Map every chosen training day ({days}) to exactly one group via that group's \"weekdays\". "
+            "Days that train the same muscles should share one group rather than repeat it. "
+            "Every group must be used on at least one chosen day."
         )
     else:
-        day_rule = "- 3-5 training days, balanced across muscle groups relative to the stated goal."
+        day_rule = (
+            "- 3-5 groups, balanced across muscle groups relative to the stated goal. Suggest weekdays for each "
+            'in "weekdays" (e.g. ["mon", "thu"]), or [] if the group isn\'t tied to a day.'
+        )
 
     section = "## Athlete's preferences for this plan (follow these)\n" + "\n".join(lines) + "\n\n" if lines else ""
     return section, day_rule
@@ -99,7 +103,7 @@ def _build_plan_json_schema_description(include_warmup: bool) -> str:
     warmup_block = (
         """"warmup": [
         {
-          "exercise_name": string (a light, joint-mobility or activation movement relevant to the day's focus),
+          "exercise_name": string (a light, joint-mobility or activation movement relevant to the group's focus),
           "duration_or_reps": string (e.g. "5 min" or "2x15"),
           "notes": string (optional)
         }
@@ -109,11 +113,12 @@ def _build_plan_json_schema_description(include_warmup: bool) -> str:
     )
     return f"""{{
   "title": string,
-  "rationale": string (2-3 sentences explaining why this plan fits the user),
-  "days": [
+  "rationale": string (2-3 sentences explaining why these groups fit the user),
+  "groups": [
     {{
-      "day_label": string (e.g. "Day 1 - Push"),
+      "name": string (a short name for this exercise group, e.g. "Push" or "Upper A"; no weekday in it),
       "focus": string (e.g. "Chest, Shoulders, Triceps"),
+      "weekdays": array of "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" (days this group is done on),
       {warmup_block}
       "exercises": [
         {{
@@ -149,12 +154,12 @@ def build_plan_prompt(data: PlanGenerationInput) -> str:
     preferences_section, day_rule = _build_preferences_section(data)
 
     warmup_instruction = (
-        "- Include a short (5-10 minute) warm-up of 2-4 movements for each training day, relevant to that day's focus."
+        "- Include a short (5-10 minute) warm-up of 2-4 movements for each group, relevant to that group's focus."
         if data.include_warmup
-        else '- Omit warm-ups entirely (return an empty "warmup" array for each day) — the athlete has opted out.'
+        else '- Omit warm-ups entirely (return an empty "warmup" array for each group) — the athlete has opted out.'
     )
 
-    return f"""You are a knowledgeable, safety-conscious strength & conditioning coach. Generate a one-week training plan for a single gym-goer based on the profile and recent training summary below.
+    return f"""You are a knowledgeable, safety-conscious strength & conditioning coach. Build a set of reusable exercise groups (each group is one workout: a list of exercises done together in a session) for a single gym-goer, based on the profile and recent training summary below. The athlete picks a group to load when they log a workout.
 
 ## Athlete profile
 - Goal: {data.goal or 'not specified, assume general fitness'}

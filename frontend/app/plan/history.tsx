@@ -11,12 +11,11 @@ export default function PlanHistoryScreen() {
 
   return (
     <ScreenContainer>
-      {!isLoading && !plans?.length ? <Text style={styles.emptyText}>No plans yet — create one from the Plan tab.</Text> : null}
+      {!isLoading && !plans?.length ? <Text style={styles.emptyText}>No exercise groups yet — create them from Log workout.</Text> : null}
       {(plans ?? []).map((plan) => (
         <Card key={plan.id}>
           <Text style={styles.dateLabel}>
             {formatDayTime(plan.created_at)}
-            {plan.accepted ? ' · Followed' : ''}
           </Text>
           <PlanView plan={plan.plan} />
         </Card>

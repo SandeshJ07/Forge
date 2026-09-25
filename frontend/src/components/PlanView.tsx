@@ -3,28 +3,38 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { PlanPayload } from '@/types/database';
 import { Button } from '@/components/ui/Button';
+import { formatWeekdays, planGroups, todayWeekday } from '@/lib/planGroups';
 import { colors, radii, spacing } from '@/constants/theme';
 
 interface PlanViewProps {
   plan: PlanPayload;
-  /** Shows a per-group "Log this workout" button when provided. */
-  onStartDay?: (dayIndex: number) => void;
+  /** Shows a compact per-group "Start workout" button when provided. */
+  onStartGroup?: (groupIndex: number) => void;
   /** Label for that button, e.g. "Resume workout" while a session is running. */
-  startLabel?: (dayIndex: number) => string;
+  startLabel?: (groupIndex: number) => string;
 }
 
-export function PlanView({ plan, onStartDay, startLabel }: PlanViewProps) {
+/** A plan's exercise groups. */
+export function PlanView({ plan, onStartGroup, startLabel }: PlanViewProps) {
   const router = useRouter();
+  const today = todayWeekday();
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{plan.title}</Text>
       <Text style={styles.rationale}>{plan.rationale}</Text>
 
-      {plan.days.map((day, index) => (
+      {planGroups(plan).map((day, index) => (
         <View key={index} style={styles.dayCard}>
-          <Text style={styles.dayLabel}>{day.day_label}</Text>
-          <Text style={styles.dayFocus}>{day.focus}</Text>
+          <View style={styles.groupHead}>
+            <Text style={styles.dayLabel}>{day.name}</Text>
+            <View style={[styles.dayBadge, day.weekdays.includes(today) && styles.dayBadgeToday]}>
+              <Text style={[styles.dayBadgeText, day.weekdays.includes(today) && styles.dayBadgeTextToday]}>
+                {formatWeekdays(day.weekdays) ?? 'Any day'}
+              </Text>
+            </View>
+          </View>
+          {day.focus ? <Text style={styles.dayFocus}>{day.focus}</Text> : null}
 
           {day.warmup?.length ? (
             <View style={styles.warmupSection}>
@@ -61,9 +71,9 @@ export function PlanView({ plan, onStartDay, startLabel }: PlanViewProps) {
             </View>
           ))}
 
-          {onStartDay ? (
+          {onStartGroup ? (
             <View style={styles.startRow}>
-              <Button label={startLabel?.(index) ?? 'Log this workout'} onPress={() => onStartDay(index)} />
+              <Button label={startLabel?.(index) ?? 'Start workout'} size="small" onPress={() => onStartGroup(index)} />
             </View>
           ) : null}
         </View>
@@ -95,6 +105,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   dayLabel: {
+    flexShrink: 1,
     color: colors.text,
     fontSize: 16,
     fontWeight: '700',
@@ -124,7 +135,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   startRow: {
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  groupHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  dayBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.background,
+  },
+  dayBadgeToday: {
+    backgroundColor: colors.primaryMuted,
+  },
+  dayBadgeText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dayBadgeTextToday: {
+    color: colors.primary,
   },
   exerciseRow: {
     paddingVertical: spacing.sm,

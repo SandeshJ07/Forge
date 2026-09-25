@@ -16,16 +16,22 @@ import { useLogManualWorkout } from '@/hooks/useWorkouts';
 import { usePersonalRecords } from '@/hooks/usePersonalRecords';
 import { useIsDesktopWeb } from '@/hooks/useResponsive';
 import { useUnitStore } from '@/stores/useUnitStore';
-import { useWorkoutSessionStore, type SessionExercise } from '@/stores/useWorkoutSessionStore';
+import {
+  MAX_REST_SECONDS,
+  MIN_REST_SECONDS,
+  useWorkoutSessionStore,
+  type SessionExercise,
+} from '@/stores/useWorkoutSessionStore';
 import { primeRestChime } from '@/lib/restChime';
 import { formatWeight, LB_PER_KG } from '@/lib/format';
 import { ApiError } from '@/lib/apiClient';
-import type { PlanDay } from '@/types/database';
+import { formatWeekdays, planGroups, todayWeekday } from '@/lib/planGroups';
+import type { PlanGroup } from '@/types/database';
 import { colors, radii, spacing } from '@/constants/theme';
 
 const MIN_SEARCH_CHARS = 2;
 const SEARCH_RESULT_LIMIT = 20;
-const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const REST_STEP_SECONDS = 15;
 
 function parseNumber(value: string): number | null {
   const n = Number(value.trim().replace(',', '.'));
@@ -36,15 +42,9 @@ function isSameDay(a: number, b: number): boolean {
   return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
-/** The plan group mapped to today's weekday ("Monday - Push" on a Monday), if the plan has one. */
-function todaysGroupIndex(days: PlanDay[]): number {
-  const today = WEEKDAY_NAMES[new Date().getDay()];
-  return days.findIndex((d) => d.day_label.trim().toLowerCase().startsWith(today));
-}
-
 /**
- * The one place to log a workout: add exercises by search, take today's plan
- * suggestions, or load a whole plan group; tick sets off with a rest timer
+ * The one place to log a workout: take today's suggested exercises, add
+ * exercises by search, or load a whole exercise group; tick sets off with a rest timer
  * between them. Progress lives in useWorkoutSessionStore, so it survives
  * leaving the screen or reloading.
  */
@@ -65,6 +65,7 @@ export default function LogWorkoutScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [suggestionExpanded, setSuggestionExpanded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [summary, setSummary] = useState<{ sets: number; duration: number | null; prs: string[] } | null>(null);
@@ -81,12 +82,12 @@ export default function LogWorkoutScreen() {
   );
 
   const exercises = session?.exercises ?? [];
-  const addedNames = new Set(exercises.map((e) => e.name.toLowerCase()));
-  const planDays = latestPlan?.plan.days ?? [];
-  const todayIndex = latestPlan ? todaysGroupIndex(planDays) : -1;
-  const todayGroup = todayIndex >= 0 ? planDays[todayIndex] : null;
-  const todayGroupLoaded = Boolean(latestPlan && session?.loadedGroups.includes(`${latestPlan.id}:${todayIndex}`));
-  const showSuggestions = todayGroup && !todayGroupLoaded && todayGroup.exercises.some((e) => !addedNames.has(e.exercise_name.toLowerCase()));
+  const groups = useMemo(() => planGroups(latestPlan?.plan), [latestPlan]);
+  const todayIndex = groups.findIndex((g) => g.weekdays?.includes(todayWeekday()));
+  const todayGroup = todayIndex >= 0 ? groups[todayIndex] : null;
+  // Once any group is loaded the workout has its exercises; from then on only "Add exercise" is offered.
+  const groupLoaded = Boolean(session?.loadedGroups.length);
+  const showSuggestion = Boolean(todayGroup && !groupLoaded);
 
   const date = session?.date ?? now;
   const loggingToday = isSameDay(date, now);
@@ -102,9 +103,9 @@ export default function LogWorkoutScreen() {
     setSearchOpen(false);
   }
 
-  function loadGroup(dayIndex: number) {
+  function loadGroup(groupIndex: number) {
     if (!latestPlan) return;
-    store.addPlanGroup(latestPlan.id, dayIndex, planDays[dayIndex]);
+    store.addPlanGroup(latestPlan.id, groupIndex, groups[groupIndex]);
     setGroupsOpen(false);
   }
 
@@ -213,47 +214,39 @@ export default function LogWorkoutScreen() {
           </View>
         ) : null}
 
-        {showSuggestions && todayGroup ? (
+        {showSuggestion && todayGroup ? (
           <Card style={[styles.card, styles.suggestCard]}>
+            <Text style={styles.eyebrow}>Today's workout</Text>
             <View style={styles.suggestHead}>
               <View style={styles.flex}>
-                <Text style={styles.eyebrow}>Suggested for today</Text>
-                <Text style={styles.cardTitle}>{todayGroup.day_label}</Text>
-                <Text style={styles.muted}>{todayGroup.focus}</Text>
+                <Text style={styles.cardTitle}>{todayGroup.name}</Text>
+                <Text style={styles.muted}>
+                  {[formatWeekdays(todayGroup.weekdays), todayGroup.focus].filter(Boolean).join(' · ')}
+                </Text>
               </View>
-              <Button label="Add all" onPress={() => loadGroup(todayIndex)} />
+              <Button label="Start" size="small" onPress={() => loadGroup(todayIndex)} />
             </View>
-            {todayGroup.exercises.map((e) => {
-              const added = addedNames.has(e.exercise_name.toLowerCase());
-              return (
-                <View key={e.exercise_name} style={styles.suggestRow}>
-                  <View style={styles.flex}>
-                    <Text style={styles.suggestName}>{e.exercise_name}</Text>
+            <Pressable
+              onPress={() => setSuggestionExpanded((v) => !v)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: suggestionExpanded }}
+              style={styles.accordionToggle}
+            >
+              <Text style={styles.accordionText}>
+                {suggestionExpanded ? 'Hide exercises' : `Show ${todayGroup.exercises.length} exercises`}
+              </Text>
+              <Ionicons name={suggestionExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.primary} />
+            </Pressable>
+            {suggestionExpanded
+              ? todayGroup.exercises.map((e) => (
+                  <View key={e.exercise_name} style={styles.suggestRow}>
+                    <Text style={[styles.suggestName, styles.flex]}>{e.exercise_name}</Text>
                     <Text style={styles.muted}>
                       {e.sets} × {e.reps}
                     </Text>
                   </View>
-                  <Pressable
-                    disabled={added}
-                    onPress={() =>
-                      store.addExercise({
-                        exerciseId: e.exercise_id,
-                        name: e.exercise_name,
-                        sets: e.sets,
-                        targetReps: e.reps,
-                        restSeconds: e.rest_seconds,
-                        notes: e.notes,
-                      })
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={added ? `${e.exercise_name} added` : `Add ${e.exercise_name}`}
-                    style={[styles.addChip, added && styles.addChipDone]}
-                  >
-                    <Ionicons name={added ? 'checkmark' : 'add'} size={18} color={added ? colors.success : colors.primary} />
-                  </Pressable>
-                </View>
-              );
-            })}
+                ))
+              : null}
           </Card>
         ) : null}
 
@@ -292,6 +285,7 @@ export default function LogWorkoutScreen() {
             onAddSet={() => store.addSet(ex.key)}
             onRemoveSet={(i) => store.removeSet(ex.key, i)}
             onRemove={() => store.removeExercise(ex.key)}
+            onRestChange={(seconds) => store.setRestSeconds(ex.key, seconds)}
           />
         ))}
 
@@ -311,12 +305,12 @@ export default function LogWorkoutScreen() {
                 autoFocus
                 autoCorrect={false}
                 style={styles.searchInput}
+                accessibilityLabel="Search exercises"
               />
               <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
             </View>
-            {query.length < MIN_SEARCH_CHARS ? (
-              <Text style={styles.muted}>Type at least {MIN_SEARCH_CHARS} letters to search the exercise library.</Text>
-            ) : searching && !results ? (
+            {/* Nothing is listed until the user types: this is a search, not a browser. */}
+            {query.length < MIN_SEARCH_CHARS ? null : searching && !results ? (
               <Text style={styles.muted}>Searching…</Text>
             ) : results?.length ? (
               results.slice(0, SEARCH_RESULT_LIMIT).map((exercise) => (
@@ -327,17 +321,16 @@ export default function LogWorkoutScreen() {
             )}
           </Card>
         ) : (
-          <View style={styles.addRow}>
-            <View style={styles.flex}>
-              <Button label="+ Add exercise" variant={exercises.length ? 'secondary' : 'primary'} onPress={() => setSearchOpen(true)} />
-            </View>
-            {planDays.length ? (
-              <View style={styles.flex}>
-                <Button label="Load plan group" variant="secondary" onPress={() => setGroupsOpen(true)} />
-              </View>
-            ) : null}
-          </View>
+          <Button label="+ Add exercise" variant={exercises.length ? 'secondary' : 'primary'} onPress={() => setSearchOpen(true)} />
         )}
+
+        {groupLoaded ? null : groups.length ? (
+          <Button label="Load an exercise group" variant="secondary" onPress={() => setGroupsOpen(true)} />
+        ) : latestPlan === null ? (
+          <Text style={[styles.link]} onPress={() => router.push('/plan/new')} accessibilityRole="link">
+            Create exercise groups with AI
+          </Text>
+        ) : null}
 
         {exercises.length ? (
           <>
@@ -347,17 +340,13 @@ export default function LogWorkoutScreen() {
               {confirmDiscard ? 'Tap again to discard this workout' : 'Discard workout'}
             </Text>
           </>
-        ) : !searchOpen ? (
-          <Text style={[styles.muted, styles.centered]}>
-            Add exercises one by one{planDays.length ? ', or load a whole group from your plan' : ''}.
-          </Text>
         ) : null}
         {rest ? <View style={{ height: 130 }} /> : null}
       </ScreenContainer>
 
       <PlanGroupsSheet
         visible={groupsOpen}
-        days={planDays}
+        groups={groups}
         loaded={(i) => Boolean(latestPlan && session?.loadedGroups.includes(`${latestPlan.id}:${i}`))}
         todayIndex={todayIndex}
         onPick={loadGroup}
@@ -398,14 +387,14 @@ export default function LogWorkoutScreen() {
 
 function PlanGroupsSheet({
   visible,
-  days,
+  groups,
   loaded,
   todayIndex,
   onPick,
   onClose,
 }: {
   visible: boolean;
-  days: PlanDay[];
+  groups: PlanGroup[];
   loaded: (index: number) => boolean;
   todayIndex: number;
   onPick: (index: number) => void;
@@ -413,6 +402,7 @@ function PlanGroupsSheet({
 }) {
   const insets = useSafeAreaInsets();
   const isDesktopWeb = useIsDesktopWeb();
+  const router = useRouter();
   return (
     <Modal visible={visible} transparent animationType={isDesktopWeb ? 'fade' : 'slide'} onRequestClose={onClose}>
       <Pressable style={[styles.backdrop, isDesktopWeb && styles.backdropCentered]} onPress={onClose}>
@@ -421,14 +411,15 @@ function PlanGroupsSheet({
           style={[styles.sheet, isDesktopWeb ? styles.sheetDesktop : { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}
         >
           <View style={styles.searchHead}>
-            <Text style={styles.cardTitle}>Load a plan group</Text>
+            <Text style={styles.cardTitle}>Load an exercise group</Text>
             <Pressable onPress={onClose} accessibilityLabel="Close" hitSlop={10}>
               <Ionicons name="close" size={22} color={colors.textMuted} />
             </Pressable>
           </View>
           <Text style={styles.muted}>Adds every exercise in the group, with its sets, reps and rest.</Text>
-          {days.map((day, i) => {
+          {groups.map((group, i) => {
             const isLoaded = loaded(i);
+            const days = formatWeekdays(group.weekdays);
             return (
               <Pressable
                 key={i}
@@ -439,11 +430,11 @@ function PlanGroupsSheet({
               >
                 <View style={styles.flex}>
                   <Text style={styles.suggestName}>
-                    {day.day_label}
+                    {group.name}
                     {i === todayIndex ? '  · Today' : ''}
                   </Text>
                   <Text style={styles.muted} numberOfLines={1}>
-                    {day.exercises.length} exercises · {day.focus}
+                    {[`${group.exercises.length} exercises`, group.focus, days].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
                 <Ionicons
@@ -454,6 +445,16 @@ function PlanGroupsSheet({
               </Pressable>
             );
           })}
+          <Text
+            style={styles.link}
+            onPress={() => {
+              onClose();
+              router.push('/plan');
+            }}
+            accessibilityRole="link"
+          >
+            Manage exercise groups
+          </Text>
         </Pressable>
       </Pressable>
     </Modal>
@@ -470,6 +471,7 @@ function ExerciseCard({
   onAddSet,
   onRemoveSet,
   onRemove,
+  onRestChange,
 }: {
   exercise: SessionExercise;
   weightUnit: string;
@@ -480,11 +482,11 @@ function ExerciseCard({
   onAddSet: () => void;
   onRemoveSet: (setIndex: number) => void;
   onRemove: () => void;
+  onRestChange: (seconds: number) => void;
 }) {
   const allDone = exercise.sets.every((s) => s.done);
   const meta = [
     exercise.targetReps ? `${exercise.sets.length} × ${exercise.targetReps}` : null,
-    `rest ${formatClock(exercise.restSeconds)}`,
     best ? `best ${bestLabel(best)}` : null,
   ].filter(Boolean);
   return (
@@ -500,6 +502,34 @@ function ExerciseCard({
         </Text>
       </View>
       {exercise.notes ? <Text style={styles.notes}>{exercise.notes}</Text> : null}
+
+      <View style={styles.restEdit}>
+        <Ionicons name="timer-outline" size={16} color={colors.textMuted} />
+        <Text style={[styles.muted, styles.flex]}>Rest between sets</Text>
+        <Pressable
+          onPress={() => onRestChange(exercise.restSeconds - REST_STEP_SECONDS)}
+          disabled={exercise.restSeconds <= MIN_REST_SECONDS}
+          accessibilityRole="button"
+          accessibilityLabel={`Shorter rest for ${exercise.name}`}
+          hitSlop={6}
+          style={[styles.restStep, exercise.restSeconds <= MIN_REST_SECONDS && styles.restStepDisabled]}
+        >
+          <Ionicons name="remove" size={16} color={colors.text} />
+        </Pressable>
+        <Text style={styles.restValue} accessibilityLabel={`Rest ${formatClock(exercise.restSeconds)}`}>
+          {formatClock(exercise.restSeconds)}
+        </Text>
+        <Pressable
+          onPress={() => onRestChange(exercise.restSeconds + REST_STEP_SECONDS)}
+          disabled={exercise.restSeconds >= MAX_REST_SECONDS}
+          accessibilityRole="button"
+          accessibilityLabel={`Longer rest for ${exercise.name}`}
+          hitSlop={6}
+          style={[styles.restStep, exercise.restSeconds >= MAX_REST_SECONDS && styles.restStepDisabled]}
+        >
+          <Ionicons name="add" size={16} color={colors.text} />
+        </Pressable>
+      </View>
 
       <View style={styles.setRow}>
         <Text style={[styles.colLabel, styles.setCol]}>Set</Text>
@@ -568,7 +598,6 @@ function RestButton({ label, onPress, primary = false }: { label: string; onPres
 const styles = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1 },
-  centered: { textAlign: 'center' },
   row: { flexDirection: 'row', gap: spacing.sm },
   dateField: { width: 180 },
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -589,7 +618,7 @@ const styles = StyleSheet.create({
   cardDone: { borderColor: 'rgba(61,220,132,0.4)' },
   cardTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   suggestCard: { borderColor: colors.primaryMuted },
-  suggestHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.xs },
+  suggestHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   suggestRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -599,17 +628,22 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   suggestName: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  addChip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  accordionToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', cursor: 'pointer' },
+  accordionText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
+  restEdit: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  restStep: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
   },
-  addChipDone: { borderColor: colors.success },
+  restStepDisabled: { opacity: 0.4 },
+  restValue: { color: colors.text, fontSize: 15, fontWeight: '700', minWidth: 44, textAlign: 'center', fontVariant: ['tabular-nums'] },
   warmupRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4, cursor: 'pointer' },
   warmupText: { color: colors.text, fontSize: 14, flex: 1 },
   struck: { color: colors.textMuted, textDecorationLine: 'line-through' },
@@ -648,7 +682,6 @@ const styles = StyleSheet.create({
   searchHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   searchInput: { paddingLeft: 42 },
   searchIcon: { position: 'absolute', left: spacing.md, top: 17 },
-  addRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
   error: { color: colors.danger, fontSize: 14 },
   discard: { color: colors.textMuted, fontSize: 14, textAlign: 'center', paddingVertical: spacing.sm, cursor: 'pointer' },
   discardConfirm: { color: colors.danger, fontWeight: '700' },

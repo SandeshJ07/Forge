@@ -199,8 +199,19 @@ export interface WarmupExercise {
   notes?: string;
 }
 
-export interface PlanDay {
-  day_label: string; // e.g. "Day 1 - Push"
+/** One workout's worth of exercises, loaded as a unit on the Log workout screen. */
+export interface PlanGroup {
+  name: string; // e.g. "Push" or "Upper A"
+  focus: string; // e.g. "Chest, Shoulders, Triceps"
+  /** Weekdays this group is mapped to; each weekday belongs to at most one group. */
+  weekdays: Weekday[];
+  warmup: WarmupExercise[];
+  exercises: PlanExercise[];
+}
+
+/** Plans generated before exercise groups: one entry per training day. Read via planGroups(). */
+export interface LegacyPlanDay {
+  day_label: string; // e.g. "Monday - Push"
   focus: string;
   warmup: WarmupExercise[];
   exercises: PlanExercise[];
@@ -209,5 +220,6 @@ export interface PlanDay {
 export interface PlanPayload {
   title: string;
   rationale: string;
-  days: PlanDay[];
+  groups?: PlanGroup[];
+  days?: LegacyPlanDay[];
 }

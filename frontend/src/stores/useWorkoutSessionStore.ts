@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { PlanDay } from '@/types/database';
+import type { PlanGroup } from '@/types/database';
 
 /** Rest between the last set of one exercise and the first set of the next. */
 export const BETWEEN_EXERCISE_REST_SECONDS = 120;
+export const MIN_REST_SECONDS = 15;
+export const MAX_REST_SECONDS = 600;
 const DEFAULT_REST_SECONDS = 90;
 const DEFAULT_TITLE = 'Workout';
 
@@ -43,7 +45,7 @@ export interface WorkoutSession {
   date: number;
   /** When logging began — for the elapsed clock and saved duration. */
   startedAt: number;
-  /** Plan groups loaded into this workout, as "planId:dayIndex". */
+  /** Plan groups loaded into this workout, as "planId:groupIndex". */
   loadedGroups: string[];
   warmup: { name: string; detail: string; done: boolean }[];
   exercises: SessionExercise[];
@@ -64,8 +66,10 @@ interface SessionState {
   setTitle: (title: string) => void;
   setDate: (date: Date) => void;
   addExercise: (exercise: NewExercise) => void;
-  addPlanGroup: (planId: string, dayIndex: number, day: PlanDay) => void;
+  addPlanGroup: (planId: string, groupIndex: number, group: PlanGroup) => void;
   removeExercise: (exerciseKey: string) => void;
+  /** This session only — the plan's rest time is left as is. */
+  setRestSeconds: (exerciseKey: string, seconds: number) => void;
   updateSet: (exerciseKey: string, setIndex: number, field: 'weight' | 'reps', value: string) => void;
   toggleSetDone: (exerciseKey: string, setIndex: number) => void;
   addSet: (exerciseKey: string) => void;
@@ -116,22 +120,22 @@ export const useWorkoutSessionStore = create<SessionState>()(
 
         addExercise: (exercise) => update((s) => ({ ...s, exercises: [...s.exercises, toSessionExercise(exercise)] })),
 
-        addPlanGroup: (planId, dayIndex, day) =>
+        addPlanGroup: (planId, groupIndex, group) =>
           update((s) => {
-            const groupKey = `${planId}:${dayIndex}`;
+            const groupKey = `${planId}:${groupIndex}`;
             if (s.loadedGroups.includes(groupKey)) return s;
             const existing = new Set(s.exercises.map((e) => e.name.toLowerCase()));
             return {
               ...s,
-              title: s.title === DEFAULT_TITLE && !s.exercises.length ? day.day_label : s.title,
+              title: s.title === DEFAULT_TITLE && !s.exercises.length ? group.name : s.title,
               loadedGroups: [...s.loadedGroups, groupKey],
               warmup: [
                 ...s.warmup,
-                ...(day.warmup ?? []).map((w) => ({ name: w.exercise_name, detail: w.duration_or_reps, done: false })),
+                ...(group.warmup ?? []).map((w) => ({ name: w.exercise_name, detail: w.duration_or_reps, done: false })),
               ],
               exercises: [
                 ...s.exercises,
-                ...day.exercises
+                ...group.exercises
                   .filter((e) => !existing.has(e.exercise_name.toLowerCase()))
                   .map((e) =>
                     toSessionExercise({
@@ -149,6 +153,14 @@ export const useWorkoutSessionStore = create<SessionState>()(
 
         removeExercise: (exerciseKey) =>
           update((s) => ({ ...s, exercises: s.exercises.filter((e) => e.key !== exerciseKey) })),
+
+        setRestSeconds: (exerciseKey, seconds) =>
+          update((s) => ({
+            ...s,
+            exercises: s.exercises.map((ex) =>
+              ex.key === exerciseKey ? { ...ex, restSeconds: Math.min(MAX_REST_SECONDS, Math.max(MIN_REST_SECONDS, seconds)) } : ex
+            ),
+          })),
 
         updateSet: (exerciseKey, setIndex, field, value) =>
           update((s) => ({

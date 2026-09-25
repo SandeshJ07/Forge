@@ -185,9 +185,8 @@ def _attach_exercise_ids(db: Session, plan_json: dict) -> None:
     """
     plan_exercises = [
         exercise
-        for day in plan_json.get("days") or []
-        if isinstance(day, dict)
-        for exercise in day.get("exercises") or []
+        for group in plan_json.get("groups") or []
+        for exercise in group.get("exercises") or []
         if isinstance(exercise, dict)
     ]
     names = {str(e.get("exercise_name", "")).strip().lower() for e in plan_exercises} - {""}
@@ -198,6 +197,31 @@ def _attach_exercise_ids(db: Session, plan_json: dict) -> None:
     id_by_name = {name.lower(): str(exercise_id) for exercise_id, name in rows}
     for exercise in plan_exercises:
         exercise["exercise_id"] = id_by_name.get(str(exercise.get("exercise_name", "")).strip().lower())
+
+
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _normalize_groups(plan_json: dict) -> None:
+    """
+    Keeps plan_json["groups"] to well-formed exercise groups: drops non-dict
+    entries, and trims "weekdays" to known keys in week order with each
+    weekday on one group only (the first that claims it), so the app can map
+    "today" to a single group.
+    """
+    groups = [g for g in plan_json.get("groups") or [] if isinstance(g, dict)]
+    claimed: set[str] = set()
+    for group in groups:
+        raw = group.get("weekdays")
+        picked = {str(d).strip().lower()[:3] for d in raw} if isinstance(raw, list) else set()
+        group["weekdays"] = [d for d in WEEKDAYS if d in picked and d not in claimed]
+        claimed.update(group["weekdays"])
+        group["name"] = str(group.get("name") or group.get("focus") or "Workout").strip()
+        group["focus"] = str(group.get("focus") or "").strip()
+        group["warmup"] = [w for w in group.get("warmup") or [] if isinstance(w, dict)]
+        group["exercises"] = [e for e in group.get("exercises") or [] if isinstance(e, dict)]
+    plan_json["groups"] = [g for g in groups if g["exercises"]]
+    plan_json.pop("days", None)
 
 
 def _parse_plan_json(text: str) -> dict:
@@ -234,6 +258,11 @@ async def generate_plan_for_user(db: Session, user_id: UUID, preferences: dict |
 
     text, model_used = await generate_text(provider, api_key, prompt, max_tokens=2500)
     plan_json = _parse_plan_json(text)
+    if not isinstance(plan_json, dict):
+        raise PlanParseError("Failed to parse plan JSON from the AI response")
+    _normalize_groups(plan_json)
+    if not plan_json["groups"]:
+        raise PlanParseError("The AI returned no exercise groups. Please try again.")
     _attach_exercise_ids(db, plan_json)
 
     source_summary = {
