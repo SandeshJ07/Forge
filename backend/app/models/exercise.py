@@ -23,7 +23,9 @@ class Exercise(Base):
     equipment: Mapped[str | None] = mapped_column(String, index=True)
     difficulty: Mapped[str | None] = mapped_column(String)
     instructions: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    # First how-to image, kept for list thumbnails; media_urls has all of them in order.
     media_url: Mapped[str | None] = mapped_column(String)
+    media_urls: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list, server_default="{}")
     media_type: Mapped[str | None] = mapped_column(String)
     category: Mapped[str | None] = mapped_column(String)
     source: Mapped[str] = mapped_column(String, nullable=False, default="free-exercise-db")

@@ -17,6 +17,7 @@ class ExerciseResponse(BaseModel):
     difficulty: str | None
     instructions: list[str]
     media_url: str | None
+    media_urls: list[str]
     media_type: str | None
     category: str | None
     source: str
