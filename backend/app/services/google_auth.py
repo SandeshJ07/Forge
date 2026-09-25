@@ -44,7 +44,11 @@ def verify_google_id_token(token: str) -> GoogleIdentity:
     if not client_ids:
         raise GoogleSignInDisabled("Google sign-in isn't set up on this server.")
     try:
-        claims = id_token.verify_oauth2_token(token, Request(session=_session), audience=client_ids)
+        # A fresh token's "issued at" can be a second or two ahead of this server's
+        # clock; with the library's default of zero tolerance that fails as "used too early".
+        claims = id_token.verify_oauth2_token(
+            token, Request(session=_session), audience=client_ids, clock_skew_in_seconds=10
+        )
     except TransportError as exc:  # couldn't fetch Google's signing keys
         raise GoogleUnreachable("Couldn't reach Google to check your sign-in. Please try again.") from exc
     except ValueError as exc:
