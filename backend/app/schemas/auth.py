@@ -32,6 +32,19 @@ class UpdateUsernameRequest(BaseModel):
     _check_username = field_validator("username")(_validate_username)
 
 
+class ChangePasswordRequest(BaseModel):
+    # Accounts with a password prove it's them with current_password. Google-only
+    # accounts (no password yet) use a code emailed by POST /auth/password/code.
+    current_password: str | None = Field(default=None, max_length=200)
+    code: str | None = Field(default=None, pattern=CODE_PATTERN.pattern)
+    new_password: str = Field(min_length=6, max_length=200)
+
+
+class PasswordCodeResponse(BaseModel):
+    # e.g. "s•••••@gmail.com" — enough to recognise, not the full address.
+    sent_to: str
+
+
 class DeleteAccountRequest(BaseModel):
     # Accounts with a password must re-enter it; Google-only accounts (no
     # password) confirm by typing their username instead.

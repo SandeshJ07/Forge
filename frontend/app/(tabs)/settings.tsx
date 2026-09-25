@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
-import { deleteAccount, signOutAndReset, updateUsername } from '@/api/auth';
+import { changePassword, deleteAccount, requestSetPasswordCode, signOutAndReset, updateUsername } from '@/api/auth';
 import { clearAiKey, saveAiKey } from '@/api/aiKeys';
 import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
 import type { AIProvider } from '@/types/database';
@@ -189,6 +189,7 @@ export default function SettingsScreen() {
             <Button label="Save username" onPress={handleSaveUsername} loading={usernameSaving} />
           ) : null}
         </Card>
+        {profile ? <PasswordCard hasPassword={profile.has_password} /> : null}
       </Section>
 
       <Section title="Training" hint="Used every time a plan is generated.">
@@ -392,6 +393,180 @@ export default function SettingsScreen() {
 
       <DeleteAccountSection hasPassword={profile?.has_password ?? true} username={profile ? username : undefined} />
     </ScreenContainer>
+  );
+}
+
+const MIN_PASSWORD_LENGTH = 6;
+
+/**
+ * Change password (current one required) — or, for accounts made with Google
+ * that have none yet, set one using a code emailed to the account's address.
+ */
+function PasswordCard({ hasPassword }: { hasPassword: boolean }) {
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.userId);
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<Message>(null);
+
+  function reset() {
+    setOpen(false);
+    setCurrent('');
+    setCode('');
+    setCodeSentTo(null);
+    setNext('');
+    setConfirm('');
+  }
+
+  async function run(fn: () => Promise<void>) {
+    setMessage(null);
+    setBusy(true);
+    try {
+      await fn();
+    } catch (err) {
+      setMessage({ text: err instanceof ApiError ? err.message : 'Something went wrong. Please try again.', isError: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const mismatch = Boolean(confirm) && next !== confirm;
+  const tooShort = Boolean(next) && next.length < MIN_PASSWORD_LENGTH;
+  const proofReady = hasPassword ? Boolean(current) : code.trim().length === 6;
+  const canSave = proofReady && next.length >= MIN_PASSWORD_LENGTH && next === confirm;
+
+  function handleSave() {
+    run(async () => {
+      await changePassword(hasPassword ? { currentPassword: current } : { code: code.trim() }, next);
+      const wasSet = !hasPassword;
+      reset();
+      setMessage({
+        text: wasSet
+          ? 'Password set. You can now sign in with your email or username and this password, or with Google.'
+          : 'Password changed.',
+        isError: false,
+      });
+      if (wasSet) queryClient.invalidateQueries({ queryKey: ['user-profile', userId] });
+    });
+  }
+
+  return (
+    <Card style={styles.card}>
+      <Text style={styles.fieldLabel}>Password</Text>
+      {!open ? (
+        <>
+          <Text style={styles.bodyText}>
+            {hasPassword
+              ? 'Change the password you use to sign in with your email or username.'
+              : "You sign in with Google, so there's no password yet. Set one to also sign in with your email or username."}
+          </Text>
+          {message ? <InlineMessage message={message} /> : null}
+          <Button
+            label={hasPassword ? 'Change password' : 'Set a password'}
+            variant="secondary"
+            onPress={() => {
+              setMessage(null);
+              setOpen(true);
+            }}
+          />
+        </>
+      ) : (
+        <>
+          {hasPassword ? (
+            <TextField
+              label="Current password"
+              secureTextEntry
+              autoComplete="current-password"
+              textContentType="password"
+              value={current}
+              onChangeText={setCurrent}
+            />
+          ) : codeSentTo ? (
+            <>
+              <Text style={styles.hint}>We sent a 6-digit code to {codeSentTo}.</Text>
+              <TextField
+                label="Code from the email"
+                keyboardType="number-pad"
+                maxLength={6}
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+                value={code}
+                onChangeText={(v) => setCode(v.replace(/\D/g, ''))}
+              />
+              <Text
+                style={styles.cancelLink}
+                onPress={() => run(async () => setCodeSentTo(await requestSetPasswordCode()))}
+                accessibilityRole="button"
+              >
+                Send a new code
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.bodyText}>
+                To make sure it's you, we'll email a 6-digit code to your account's address.
+              </Text>
+              {message ? <InlineMessage message={message} /> : null}
+              <Button
+                label="Email me a code"
+                onPress={() => run(async () => setCodeSentTo(await requestSetPasswordCode()))}
+                loading={busy}
+              />
+            </>
+          )}
+
+          {hasPassword || codeSentTo ? (
+            <>
+              <TextField
+                label="New password"
+                secureTextEntry
+                autoComplete="new-password"
+                textContentType="newPassword"
+                placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                value={next}
+                onChangeText={setNext}
+              />
+              <TextField
+                label="Confirm new password"
+                secureTextEntry
+                autoComplete="new-password"
+                textContentType="newPassword"
+                value={confirm}
+                onChangeText={setConfirm}
+                onSubmitEditing={canSave ? handleSave : undefined}
+              />
+              {tooShort ? (
+                <Text style={styles.error}>Use at least {MIN_PASSWORD_LENGTH} characters.</Text>
+              ) : mismatch ? (
+                <Text style={styles.error}>The new passwords don't match.</Text>
+              ) : null}
+              {message ? <InlineMessage message={message} /> : null}
+              <Button
+                label={hasPassword ? 'Change password' : 'Set password'}
+                onPress={handleSave}
+                loading={busy}
+                disabled={!canSave}
+              />
+            </>
+          ) : null}
+          <Text
+            style={styles.cancelLink}
+            onPress={() => {
+              reset();
+              setMessage(null);
+            }}
+            accessibilityRole="button"
+          >
+            Cancel
+          </Text>
+        </>
+      )}
+    </Card>
   );
 }
 

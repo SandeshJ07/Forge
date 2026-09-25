@@ -25,8 +25,10 @@ from app.core.security import (
 from app.models.user import User
 from app.schemas.auth import (
     DeleteAccountRequest,
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     GoogleSignInRequest,
+    PasswordCodeResponse,
     RefreshRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
@@ -38,7 +40,12 @@ from app.schemas.auth import (
     UsernameResponse,
     VerifyEmailRequest,
 )
-from app.services.email import EmailSendError, send_password_reset_code, send_verification_code
+from app.services.email import (
+    EmailSendError,
+    send_password_reset_code,
+    send_set_password_code,
+    send_verification_code,
+)
 from app.services.email_codes import TooManyCodesRequested, create_code, verify_and_consume_code
 from app.services.google_auth import (
     GoogleSignInDisabled,
@@ -305,6 +312,50 @@ def update_username(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken") from exc
 
     return UsernameResponse(username=current_user.username)
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}{'•' * max(1, min(len(local) - 1, 6))}@{domain}"
+
+
+@router.post("/password/code", response_model=PasswordCodeResponse, dependencies=[Depends(code_send_limit)])
+def send_password_code(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> PasswordCodeResponse:
+    """Emails a signed-in, Google-only user the code that lets them set a password."""
+    if current_user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Your account already has a password — change it with your current one."
+        )
+    try:
+        code = create_code(db, current_user.id, "reset_password")
+    except TooManyCodesRequested as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    try:
+        send_set_password_code(current_user.email, code)
+    except EmailSendError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=EMAIL_UNAVAILABLE) from exc
+    return PasswordCodeResponse(sent_to=_mask_email(current_user.email))
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(code_check_limit)])
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """
+    Changes the password (current password required) or, for Google-only
+    accounts, sets the first one (emailed code required). Google sign-in keeps
+    working either way.
+    """
+    if current_user.password_hash:
+        if not body.current_password or not verify_password(body.current_password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your current password isn't right.")
+    elif not body.code or not verify_and_consume_code(db, current_user.id, "reset_password", body.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
 
 
 @router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(sign_in_limit)])

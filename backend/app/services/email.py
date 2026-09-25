@@ -110,6 +110,19 @@ def send_verification_code(to_address: str, code: str) -> None:
     )
 
 
+def send_set_password_code(to_address: str, code: str) -> None:
+    _send(
+        to_address,
+        subject="Set a password for your Forge account",
+        body=(
+            f"Your code to set a password is: {code}\n\n"
+            f"Enter it in Forge's Settings along with your new password. It expires in {settings.email_code_expire_minutes} minutes.\n\n"
+            "Once set, you can sign in with your email or username and this password, as well as with Google.\n\n"
+            "If you didn't ask for this, you can ignore this email — nothing changes without the code."
+        ),
+    )
+
+
 def send_password_reset_code(to_address: str, code: str) -> None:
     _send(
         to_address,

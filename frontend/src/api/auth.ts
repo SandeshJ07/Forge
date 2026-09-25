@@ -90,6 +90,21 @@ export async function updateUsername(username: string): Promise<void> {
  * through this rather than clearing the store directly, so nothing is left
  * half-cleared.
  */
+/** Emails a Google-only user the code that lets them set a password. Returns the masked address it went to. */
+export async function requestSetPasswordCode(): Promise<string> {
+  const data = await apiClient.post<{ sent_to: string }>('/auth/password/code');
+  return data.sent_to;
+}
+
+/** Changes the password (with the current one) or sets the first one (with the emailed code). */
+export async function changePassword(
+  proof: { currentPassword: string } | { code: string },
+  newPassword: string
+): Promise<void> {
+  const body = 'currentPassword' in proof ? { current_password: proof.currentPassword } : { code: proof.code };
+  await apiClient.post('/auth/change-password', { ...body, new_password: newPassword });
+}
+
 /**
  * Permanently deletes the account and all its data, then signs out locally.
  * Password accounts confirm with their password; Google-only accounts with their username.
