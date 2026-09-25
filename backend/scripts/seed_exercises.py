@@ -54,6 +54,7 @@ def main() -> None:
                         difficulty=DIFFICULTY_MAP.get(entry.get("level")),
                         instructions=entry.get("instructions") or [],
                         media_url=f"{MEDIA_BASE_URL}/{images[0]}" if images else None,
+                        media_urls=[f"{MEDIA_BASE_URL}/{image}" for image in images],
                         media_type="image" if images else None,
                         category=entry.get("category"),
                         source="free-exercise-db",

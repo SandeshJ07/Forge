@@ -32,7 +32,10 @@ export interface Exercise {
   equipment: string | null;
   difficulty: 'beginner' | 'intermediate' | 'advanced' | null;
   instructions: string[];
+  /** First how-to image (list thumbnails). */
   media_url: string | null;
+  /** Every how-to image in order — for free-exercise-db, the start and end position. */
+  media_urls: string[];
   media_type: 'image' | 'gif' | null;
   category: string | null;
   source: string;
