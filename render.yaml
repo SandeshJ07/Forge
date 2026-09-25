@@ -26,9 +26,7 @@ services:
         sync: false
       - key: DATA_ENCRYPTION_KEY
         sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ANTHROPIC_MODEL
+      - key: GEMINI_API_KEY # shared key for users without their own
         sync: false
       - key: GOOGLE_CLIENT_IDS
         sync: false
