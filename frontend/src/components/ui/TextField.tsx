@@ -12,6 +12,8 @@ export function TextField({ label, style, ...rest }: TextFieldProps) {
       <TextInput
         placeholderTextColor={colors.textMuted}
         style={[styles.input, style]}
+        // The visible label is also the input's accessible name, so screen readers announce it.
+        accessibilityLabel={label}
         {...rest}
       />
     </View>

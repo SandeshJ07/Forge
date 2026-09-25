@@ -32,6 +32,13 @@ class UpdateUsernameRequest(BaseModel):
     _check_username = field_validator("username")(_validate_username)
 
 
+class DeleteAccountRequest(BaseModel):
+    # Accounts with a password must re-enter it; Google-only accounts (no
+    # password) confirm by typing their username instead.
+    password: str | None = Field(default=None, max_length=200)
+    confirm_username: str | None = Field(default=None, max_length=30)
+
+
 class UsernameResponse(BaseModel):
     username: str
 

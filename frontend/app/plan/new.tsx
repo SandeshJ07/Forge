@@ -272,7 +272,7 @@ export default function PlanPreferencesScreen() {
       )}
 
       <Button
-        label={latestPlan ? 'Generate new groups' : 'Create exercise groups'}
+        label={latestPlan ? 'Generate new plan' : 'Create Plan'}
         onPress={handleGenerate}
         loading={generatePlan.isPending}
         disabled={!days.length || alreadyGenerating || outOfGenerations}

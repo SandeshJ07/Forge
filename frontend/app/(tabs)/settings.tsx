@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
-import { signOutAndReset, updateUsername } from '@/api/auth';
+import { deleteAccount, signOutAndReset, updateUsername } from '@/api/auth';
 import { clearAiKey, saveAiKey } from '@/api/aiKeys';
 import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
 import type { AIProvider } from '@/types/database';
@@ -389,7 +389,74 @@ export default function SettingsScreen() {
           this device.
         </Text>
       </View>
+
+      <DeleteAccountSection hasPassword={profile?.has_password ?? true} username={profile ? username : undefined} />
     </ScreenContainer>
+  );
+}
+
+/** Permanent, so it asks twice: open the form, then re-confirm with the password (or username for Google-only accounts). */
+function DeleteAccountSection({ hasPassword, username }: { hasPassword: boolean; username?: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function close() {
+    setOpen(false);
+    setValue('');
+    setError(null);
+  }
+
+  async function handleDelete() {
+    setError(null);
+    setBusy(true);
+    try {
+      await deleteAccount(hasPassword ? { password: value } : { confirmUsername: value.trim() }, queryClient);
+      // Signed out: the root layout takes the user to the sign-in screen.
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't delete your account. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title="Delete account">
+      <Card style={[styles.card, styles.dangerCard]}>
+        <Text style={styles.bodyText}>
+          Permanently deletes your account and everything in it — workouts, plans, measurements, records and settings.
+          This can't be undone.
+        </Text>
+        {open ? (
+          <>
+            <TextField
+              label={hasPassword ? 'Enter your password to confirm' : `Type your username (${username ?? ''}) to confirm`}
+              value={value}
+              onChangeText={setValue}
+              secureTextEntry={hasPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete={hasPassword ? 'current-password' : 'off'}
+              onSubmitEditing={value ? handleDelete : undefined}
+            />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Button
+              label="Permanently delete my account"
+              variant="danger"
+              onPress={handleDelete}
+              loading={busy}
+              disabled={!value.trim()}
+            />
+            <Text style={styles.cancelLink} onPress={close} accessibilityRole="button">
+              Cancel
+            </Text>
+          </>
+        ) : (
+          <Button label="Delete account" variant="danger" onPress={() => setOpen(true)} />
+        )}
+      </Card>
+    </Section>
   );
 }
 
@@ -419,6 +486,17 @@ function InlineMessage({ message }: { message: NonNullable<Message> }) {
 }
 
 const styles = StyleSheet.create({
+  dangerCard: {
+    borderColor: 'rgba(255,92,92,0.35)',
+  },
+  cancelLink: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: spacing.xs,
+    cursor: 'pointer',
+  },
   section: {
     gap: spacing.sm,
     marginTop: spacing.xs,

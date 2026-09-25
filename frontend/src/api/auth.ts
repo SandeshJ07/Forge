@@ -90,6 +90,20 @@ export async function updateUsername(username: string): Promise<void> {
  * through this rather than clearing the store directly, so nothing is left
  * half-cleared.
  */
+/**
+ * Permanently deletes the account and all its data, then signs out locally.
+ * Password accounts confirm with their password; Google-only accounts with their username.
+ */
+export async function deleteAccount(
+  confirmation: { password: string } | { confirmUsername: string },
+  queryClient: QueryClient
+): Promise<void> {
+  const body =
+    'password' in confirmation ? { password: confirmation.password } : { confirm_username: confirmation.confirmUsername };
+  await apiClient.post('/auth/delete-account', body);
+  await signOutAndReset(queryClient);
+}
+
 export async function signOutAndReset(queryClient: QueryClient): Promise<void> {
   await clearStoredSession();
   useAuthStore.getState().setSession(null);

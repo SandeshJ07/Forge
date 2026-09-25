@@ -129,7 +129,7 @@ export default function ExerciseGroupsScreen() {
             Get workout groups built from your goals, experience, equipment and history. Groups mapped to a weekday are
             suggested on that day when you log a workout, and any group can be loaded whenever you like.
           </Text>
-          <Button label="Create exercise groups" onPress={handleGenerate} />
+          <Button label="Create Plan" onPress={handleGenerate} />
         </Card>
       ) : null}
 

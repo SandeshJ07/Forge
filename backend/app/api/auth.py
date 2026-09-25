@@ -1,11 +1,15 @@
+import logging
 import re
 import secrets
+import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.crypto import email_index, keyed_hash
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -20,6 +24,7 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.schemas.auth import (
+    DeleteAccountRequest,
     ForgotPasswordRequest,
     GoogleSignInRequest,
     RefreshRequest,
@@ -43,6 +48,8 @@ from app.services.google_auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+settings = get_settings()
+logger = logging.getLogger(__name__)
 
 # Per-IP limits on the unauthenticated routes. The code-checking routes are
 # also capped per code (see app/services/email_codes.py); these stop one
@@ -298,3 +305,38 @@ def update_username(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken") from exc
 
     return UsernameResponse(username=current_user.username)
+
+
+@router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(sign_in_limit)])
+def delete_account(
+    body: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """
+    Permanently deletes the signed-in user and everything they own. Every
+    table references users with ON DELETE CASCADE, so one delete removes
+    profile, workouts and sets, measurements, plans, personal records,
+    feedback, API keys and email codes; progress-photo files on disk are
+    removed here too. Needs the password again (or, for Google-only accounts,
+    the username typed out) so an unlocked device alone can't do it.
+    """
+    if current_user.password_hash:
+        if not body.password or not verify_password(body.password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="That password isn't right.")
+    elif (body.confirm_username or "").strip() != current_user.username:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Type your username exactly to confirm.")
+
+    user_id = current_user.id
+    db.delete(current_user)
+    db.commit()
+
+    photo_dir = Path(settings.storage_dir) / "progress_photos" / str(user_id)
+    try:
+        shutil.rmtree(photo_dir)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # The account is already gone; leftover files are only reachable by that
+        # (now deleted) user id, so log for cleanup rather than fail the request.
+        logger.exception("Couldn't remove progress photos for deleted user %s", user_id)
