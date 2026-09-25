@@ -135,7 +135,7 @@ export default function PlanPreferencesScreen() {
       if (router.canGoBack()) router.back();
       else router.replace('/plan');
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to generate plan.');
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to generate exercise groups.');
     } finally {
       // The server saved these choices before anything else — keep the cached profile in step.
       queryClient.invalidateQueries({ queryKey: ['user-profile', userId] });
@@ -185,11 +185,11 @@ export default function PlanPreferencesScreen() {
       ) : null}
 
       <Section
-        title="Equipment for this plan"
+        title="Equipment you have"
         hint={
           equipment.length
-            ? `${equipment.length} selected — the plan only uses these (plus bodyweight).`
-            : 'Nothing selected — the plan will be bodyweight only.'
+            ? `${equipment.length} selected — groups only use these (plus bodyweight).`
+            : 'Nothing selected — groups will be bodyweight only.'
         }
       >
         <View style={styles.equipmentActions}>
@@ -218,7 +218,7 @@ export default function PlanPreferencesScreen() {
         ))}
       </Section>
 
-      <Section title="Warm-up" hint="Add a short, focus-specific warm-up to each day?">
+      <Section title="Warm-up" hint="Add a short, focus-specific warm-up to each group?">
         <ChipGroup>
           <Chip label="Include warm-up" selected={includeWarmup} onPress={() => setIncludeWarmup(true)} />
           <Chip label="No warm-up" selected={!includeWarmup} onPress={() => setIncludeWarmup(false)} />
@@ -254,7 +254,7 @@ export default function PlanPreferencesScreen() {
 
       {alreadyGenerating ? (
         <Text style={styles.generatingHint}>
-          A plan is already being built — you'll be able to start another once it's done.
+          Groups are already being built — you'll be able to start another once it's done.
         </Text>
       ) : (
         <Text style={styles.generatingHint}>
@@ -263,7 +263,7 @@ export default function PlanPreferencesScreen() {
       )}
 
       <Button
-        label={latestPlan ? 'Generate new plan' : 'Create my plan'}
+        label={latestPlan ? 'Generate new groups' : 'Create exercise groups'}
         onPress={handleGenerate}
         loading={generatePlan.isPending}
         disabled={!days.length || alreadyGenerating}

@@ -12,9 +12,9 @@ const TAB_BAR_HEIGHT = 58;
 
 /**
  * Floating status for background plan generation, visible on every signed-in
- * screen: "Building your plan…" while it runs, then "ready → View" or the
+ * screen: "Building your exercise groups…" while it runs, then "ready → View" or the
  * error with "Try again". Ready/failed only announce a job this session saw
- * start, so an old result never pops up on a fresh launch (the Plan tab shows it).
+ * start, so an old result never pops up on a fresh launch (the exercise groups screen shows it).
  */
 export function PlanGenerationPill() {
   const router = useRouter();
@@ -56,7 +56,7 @@ export function PlanGenerationPill() {
         <>
           <ActivityIndicator color={colors.primary} />
           <View style={styles.text}>
-            <Text style={styles.title}>Building your plan…</Text>
+            <Text style={styles.title}>Building your exercise groups…</Text>
             <Text style={styles.body}>Keep exploring — we'll let you know when it's ready.</Text>
           </View>
         </>
@@ -64,12 +64,12 @@ export function PlanGenerationPill() {
         <>
           <Ionicons name="checkmark-circle" size={24} color={colors.success} />
           <View style={styles.text}>
-            <Text style={styles.title}>Your new plan is ready</Text>
+            <Text style={styles.title}>Your exercise groups are ready</Text>
           </View>
           <Pressable
             onPress={() => {
               dismiss();
-              router.navigate('/plan');
+              router.push('/plan');
             }}
             style={styles.action}
             accessibilityRole="button"
@@ -81,7 +81,7 @@ export function PlanGenerationPill() {
         <>
           <Ionicons name="alert-circle" size={24} color={colors.danger} />
           <View style={styles.text}>
-            <Text style={styles.title}>Couldn't build your plan</Text>
+            <Text style={styles.title}>Couldn't build your exercise groups</Text>
             <Text style={styles.body} numberOfLines={2}>
               {data?.error ?? 'Please try again.'}
             </Text>

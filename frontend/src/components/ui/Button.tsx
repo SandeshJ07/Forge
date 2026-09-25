@@ -5,15 +5,18 @@ interface ButtonProps extends Omit<PressableProps, 'style'> {
   label: string;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   loading?: boolean;
+  /** 'small' is a compact, content-width button for inline actions. */
+  size?: 'regular' | 'small';
 }
 
-export function Button({ label, variant = 'primary', loading, disabled, ...rest }: ButtonProps) {
+export function Button({ label, variant = 'primary', size = 'regular', loading, disabled, ...rest }: ButtonProps) {
   return (
     <Pressable
       {...rest}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.base,
+        size === 'small' && styles.small,
         variantStyles[variant],
         (disabled || loading) && styles.disabled,
         pressed && styles.pressed,
@@ -22,7 +25,7 @@ export function Button({ label, variant = 'primary', loading, disabled, ...rest 
       {loading ? (
         <ActivityIndicator color={variant === 'primary' ? '#fff' : colors.text} />
       ) : (
-        <Text style={[styles.label, variant === 'ghost' && styles.ghostLabel]}>{label}</Text>
+        <Text style={[styles.label, size === 'small' && styles.smallLabel, variant === 'ghost' && styles.ghostLabel]}>{label}</Text>
       )}
     </Pressable>
   );
@@ -36,10 +39,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  small: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    alignSelf: 'flex-start',
+  },
   label: {
     color: colors.text,
     fontSize: 16,
     fontWeight: '600',
+  },
+  smallLabel: {
+    fontSize: 14,
   },
   ghostLabel: {
     color: colors.primary,
