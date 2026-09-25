@@ -16,7 +16,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.13.7
       - key: CORS_ORIGINS
-        value: https://forge-twin.vercel.app
+        value: https://forge-bro.vercel.app
       - key: JWT_ALGORITHM
         value: HS256
       # Secrets: entered in the Render dashboard (or via the API), never committed.
