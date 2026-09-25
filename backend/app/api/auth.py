@@ -46,7 +46,13 @@ from app.services.email import (
     send_set_password_code,
     send_verification_code,
 )
-from app.services.email_codes import TooManyCodesRequested, create_code, verify_and_consume_code
+from app.services.email_codes import (
+    CodeCooldown,
+    TooManyCodesRequested,
+    create_code,
+    discard_latest_code,
+    verify_and_consume_code,
+)
 from app.services.google_auth import (
     GoogleSignInDisabled,
     GoogleUnreachable,
@@ -78,8 +84,9 @@ EMAIL_UNAVAILABLE = "We couldn't send the email right now. Please try again in a
 def _send_code_quietly(db: Session, user: User, purpose: str, send) -> None:
     """
     For the resend/forgot routes, which answer 204 so they can't be used to
-    probe which emails have accounts: hitting the per-user code cap is
-    swallowed the same way a missing account is. A mail-server failure is
+    probe which emails have accounts: hitting a per-user limit (cooldown or
+    caps) is swallowed the same way a missing account is — the app shows the
+    resend countdown so people don't run into it. A mail-server failure is
     reported (503) though — otherwise the user waits for an email that
     will never come.
     """
@@ -90,6 +97,7 @@ def _send_code_quietly(db: Session, user: User, purpose: str, send) -> None:
     try:
         send(user.email, code)
     except EmailSendError as exc:
+        discard_latest_code(db, user.id, purpose)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=EMAIL_UNAVAILABLE) from exc
 
 
@@ -328,11 +336,18 @@ def send_password_code(current_user: User = Depends(get_current_user), db: Sessi
         )
     try:
         code = create_code(db, current_user.id, "reset_password")
+    except CodeCooldown as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
     except TooManyCodesRequested as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     try:
         send_set_password_code(current_user.email, code)
     except EmailSendError as exc:
+        discard_latest_code(db, current_user.id, "reset_password")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=EMAIL_UNAVAILABLE) from exc
     return PasswordCodeResponse(sent_to=_mask_email(current_user.email))
 

@@ -17,6 +17,7 @@ import { Logo } from '@/components/ui/Logo';
 import { PhotoBackdrop } from '@/components/ui/PhotoBackdrop';
 import { InstallNudge } from '@/components/InstallNudge';
 import { GoogleSignInButton, googleSignInAvailable } from '@/components/GoogleSignInButton';
+import { formatCountdown, useResendCooldown } from '@/hooks/useResendCooldown';
 import { HERO_IMAGE } from '@/constants/images';
 import { colors, radii, spacing } from '@/constants/theme';
 import { useIsDesktopWeb } from '@/hooks/useResponsive';
@@ -52,6 +53,9 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  // One countdown for every code email sent from this screen (sign-up, resend, reset).
+  const resend = useResendCooldown();
 
   const handleGoogleError = useCallback((message: string) => setErrorMessage(message), []);
 
@@ -103,6 +107,7 @@ export default function SignInScreen() {
   async function handleSignUp() {
     await withLoading(async () => {
       await signUp(email.trim(), username.trim(), password);
+      resend.start();
       setMode('verify-email');
       setInfoMessage(`We sent a 6-digit code to ${email.trim()}.`);
     });
@@ -115,6 +120,7 @@ export default function SignInScreen() {
   async function handleResendCode() {
     await withLoading(async () => {
       await resendVerificationCode(email.trim());
+      resend.start();
       setInfoMessage('New code sent. Check your inbox (and spam folder).');
     });
   }
@@ -122,8 +128,17 @@ export default function SignInScreen() {
   async function handleForgotPassword() {
     await withLoading(async () => {
       await requestPasswordReset(email.trim());
+      resend.start();
       setMode('reset-password');
       setInfoMessage(`If ${email.trim()} has an account, a reset code is on its way.`);
+    });
+  }
+
+  async function handleResendResetCode() {
+    await withLoading(async () => {
+      await requestPasswordReset(email.trim());
+      resend.start();
+      setInfoMessage('New code sent. Check your inbox (and spam folder).');
     });
   }
 
@@ -258,9 +273,7 @@ export default function SignInScreen() {
           />
           <Button label="Verify email" onPress={handleVerifyEmail} loading={loading} disabled={code.length !== 6} />
           <View style={styles.linkRow}>
-            <Text style={styles.inlineLinkCenter} onPress={loading ? undefined : handleResendCode} accessibilityRole="link">
-              Resend code
-            </Text>
+            <ResendLink remaining={resend.remaining} disabled={loading} onPress={handleResendCode} />
             <Text style={styles.linkDivider}>·</Text>
             <Text style={styles.inlineLinkCenter} onPress={() => switchMode('sign-up')} accessibilityRole="link">
               Use a different email
@@ -284,7 +297,12 @@ export default function SignInScreen() {
             onChangeText={setEmail}
             placeholder="sam@example.com"
           />
-          <Button label="Send reset code" onPress={handleForgotPassword} loading={loading} disabled={!email.trim()} />
+          <Button
+            label={resend.remaining > 0 ? `Send reset code (${formatCountdown(resend.remaining)})` : 'Send reset code'}
+            onPress={handleForgotPassword}
+            loading={loading}
+            disabled={!email.trim() || resend.remaining > 0}
+          />
           <SwitchPrompt prompt="Remembered it?" action="Back to sign in" onPress={() => switchMode('sign-in')} />
         </>
       )}
@@ -319,6 +337,9 @@ export default function SignInScreen() {
             loading={loading}
             disabled={code.length !== 6 || !newPassword}
           />
+          <View style={styles.linkRow}>
+            <ResendLink remaining={resend.remaining} disabled={loading} onPress={handleResendResetCode} />
+          </View>
           <SwitchPrompt prompt="Remembered it?" action="Back to sign in" onPress={() => switchMode('sign-in')} />
         </>
       )}
@@ -378,6 +399,22 @@ function Banner({ tone, message }: { tone: 'error' | 'info'; message: string }) 
   );
 }
 
+/** "Resend code", or a countdown while the last code is still fresh — codes can't be re-sent instantly. */
+function ResendLink({ remaining, disabled, onPress }: { remaining: number; disabled: boolean; onPress: () => void }) {
+  if (remaining > 0) {
+    return (
+      <Text style={styles.resendWaiting} accessibilityLiveRegion="polite">
+        Resend code in {formatCountdown(remaining)}
+      </Text>
+    );
+  }
+  return (
+    <Text style={styles.inlineLinkCenter} onPress={disabled ? undefined : onPress} accessibilityRole="link">
+      Resend code
+    </Text>
+  );
+}
+
 function OrDivider() {
   return (
     <View style={styles.orRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
@@ -400,6 +437,13 @@ function SwitchPrompt({ prompt, action, onPress }: { prompt: string; action: str
 }
 
 const styles = StyleSheet.create({
+  resendWaiting: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    textAlign: 'center',
+  },
   orRow: {
     flexDirection: 'row',
     alignItems: 'center',

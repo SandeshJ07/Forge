@@ -16,10 +16,24 @@ MAX_ATTEMPTS_PER_CODE = 5
 # Together with MAX_ATTEMPTS_PER_CODE this caps guessing at 25/hour per
 # account, instead of "request a fresh code, get 5 more guesses" forever.
 MAX_CODES_PER_HOUR = 5
+# Every email Forge sends carries one of these codes, so these limits cover all
+# outgoing mail per account: a pause between any two emails (the app shows a
+# matching countdown on its "Resend" buttons — frontend RESEND_COOLDOWN_SECONDS),
+# and a daily ceiling across all kinds.
+RESEND_COOLDOWN_SECONDS = 60
+MAX_CODES_PER_DAY = 10
 
 
 class TooManyCodesRequested(Exception):
     pass
+
+
+class CodeCooldown(TooManyCodesRequested):
+    """A code was emailed less than RESEND_COOLDOWN_SECONDS ago."""
+
+    def __init__(self, retry_after: int):
+        super().__init__(f"Please wait {retry_after} seconds before requesting another code.")
+        self.retry_after = retry_after
 
 
 def _hash_code(code: str) -> str:
@@ -33,7 +47,30 @@ def generate_code() -> str:
 
 
 def create_code(db: Session, user_id: UUID, purpose: str) -> str:
+    """
+    Issues a new code (to be emailed). Raises CodeCooldown if the account was
+    sent any code in the last RESEND_COOLDOWN_SECONDS, or TooManyCodesRequested
+    past the hourly (per purpose) or daily (all purposes) caps.
+    """
     now = datetime.now(timezone.utc)
+    last_sent = (
+        db.query(EmailCode.created_at)
+        .filter(EmailCode.user_id == user_id)
+        .order_by(EmailCode.created_at.desc())
+        .limit(1)
+        .scalar()
+    )
+    if last_sent is not None:
+        wait = RESEND_COOLDOWN_SECONDS - (now - last_sent).total_seconds()
+        if wait > 0:
+            raise CodeCooldown(int(wait) + 1)
+    sent_today = (
+        db.query(EmailCode)
+        .filter(EmailCode.user_id == user_id, EmailCode.created_at > now - timedelta(days=1))
+        .count()
+    )
+    if sent_today >= MAX_CODES_PER_DAY:
+        raise TooManyCodesRequested("You've requested too many codes today. Try again tomorrow.")
     recent_count = (
         db.query(EmailCode)
         .filter(
@@ -58,6 +95,19 @@ def create_code(db: Session, user_id: UUID, purpose: str) -> str:
     db.add(EmailCode(user_id=user_id, purpose=purpose, code_hash=_hash_code(code), expires_at=expires_at))
     db.commit()
     return code
+
+
+def discard_latest_code(db: Session, user_id: UUID, purpose: str) -> None:
+    """Undoes create_code when the email couldn't be sent, so a failed send doesn't start the cooldown or use up the caps."""
+    latest = (
+        db.query(EmailCode)
+        .filter(EmailCode.user_id == user_id, EmailCode.purpose == purpose)
+        .order_by(EmailCode.created_at.desc())
+        .first()
+    )
+    if latest is not None:
+        db.delete(latest)
+        db.commit()
 
 
 def verify_and_consume_code(db: Session, user_id: UUID, purpose: str, code: str) -> bool:
