@@ -2,7 +2,7 @@
 
 **Your training, compounding.** Forge is a gym companion that plans your workouts, walks you through them set by set, and shows you the progress piling up — so every session builds on the last.
 
-Try it on the web at **[forge-twin.vercel.app](https://forge-twin.vercel.app)**, and add it to your phone's home screen to use it like a regular app.
+Try it on the web at **[forge-bro.vercel.app](https://forge-bro.vercel.app)**, and add it to your phone's home screen to use it like a regular app.
 
 ---
 
