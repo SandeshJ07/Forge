@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { MeasurementChart } from '@/components/MeasurementChart';
 import { AddMeasurementForm } from '@/components/AddMeasurementForm';
+import { MeasurementHistory } from '@/components/MeasurementHistory';
 import { ProgressPhotoGrid } from '@/components/ProgressPhotoGrid';
 import { useAddProgressPhoto, useMeasurements, useMeasurementTypes, useProgressPhotos } from '@/hooks/useMeasurements';
 import type { MeasurementType } from '@/types/database';
@@ -46,6 +47,11 @@ export default function MeasurementsScreen() {
 
       <Card>
         <MeasurementChart measurements={measurements ?? []} unit={latestUnit} />
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>History</Text>
+        <MeasurementHistory key={selectedType} measurements={measurements ?? []} />
       </Card>
 
       <Card>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchRecentWorkouts,
+  fetchWorkoutsBetween,
   fetchWorkoutSets,
   logManualWorkout,
   rateWorkout,
@@ -28,6 +29,18 @@ export function useWorkoutHistory() {
   return useQuery({
     queryKey: ['workouts', userId, 'history'],
     queryFn: () => fetchRecentWorkouts(500),
+    enabled: Boolean(userId),
+  });
+}
+
+/** One local calendar month of workouts (`month` is any date in it). Refreshes with the other ['workouts', userId] queries. */
+export function useWorkoutsInMonth(month: Date) {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const start = new Date(month.getFullYear(), month.getMonth(), 1);
+  const end = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+  return useQuery({
+    queryKey: ['workouts', userId, 'month', start.getFullYear(), start.getMonth()],
+    queryFn: () => fetchWorkoutsBetween(start, end),
     enabled: Boolean(userId),
   });
 }

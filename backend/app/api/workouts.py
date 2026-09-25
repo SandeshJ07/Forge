@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -22,15 +23,19 @@ router = APIRouter(prefix="/workouts", tags=["workouts"])
 
 @router.get("", response_model=list[WorkoutResponse])
 def list_workouts(
-    limit: int = 50, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    limit: int = Query(default=50, ge=1, le=1000),
+    start: datetime | None = Query(default=None, description="Only workouts at or after this time (ISO 8601)"),
+    end: datetime | None = Query(default=None, description="Only workouts before this time (ISO 8601)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> list[Workout]:
-    return (
-        db.query(Workout)
-        .filter(Workout.user_id == current_user.id)
-        .order_by(Workout.date.desc())
-        .limit(limit)
-        .all()
-    )
+    """Newest first. start/end (e.g. a local calendar month's bounds) narrow it to a range."""
+    query = db.query(Workout).filter(Workout.user_id == current_user.id)
+    if start is not None:
+        query = query.filter(Workout.date >= start)
+    if end is not None:
+        query = query.filter(Workout.date < end)
+    return query.order_by(Workout.date.desc()).limit(limit).all()
 
 
 @router.get("/{workout_id}/sets", response_model=list[WorkoutSetResponse])
