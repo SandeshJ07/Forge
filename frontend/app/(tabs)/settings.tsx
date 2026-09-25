@@ -15,6 +15,7 @@ import { ApiError } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUserProfile, useUpsertUserProfile } from '@/hooks/useUserProfile';
 import { usePlanUsage } from '@/hooks/usePlans';
+import { formatCountdown, useResendCooldown } from '@/hooks/useResendCooldown';
 import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
 import { GOAL_OPTIONS, MAX_GOALS, toggleGoal } from '@/constants/goals';
 import { InstallAppSheet } from '@/components/InstallAppSheet';
@@ -413,6 +414,14 @@ function PasswordCard({ hasPassword }: { hasPassword: boolean }) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
+  const resend = useResendCooldown();
+
+  function sendCode() {
+    run(async () => {
+      setCodeSentTo(await requestSetPasswordCode());
+      resend.start();
+    });
+  }
 
   function reset() {
     setOpen(false);
@@ -498,13 +507,15 @@ function PasswordCard({ hasPassword }: { hasPassword: boolean }) {
                 value={code}
                 onChangeText={(v) => setCode(v.replace(/\D/g, ''))}
               />
-              <Text
-                style={styles.cancelLink}
-                onPress={() => run(async () => setCodeSentTo(await requestSetPasswordCode()))}
-                accessibilityRole="button"
-              >
-                Send a new code
-              </Text>
+              {resend.remaining > 0 ? (
+                <Text style={styles.cancelLink} accessibilityLiveRegion="polite">
+                  Send a new code in {formatCountdown(resend.remaining)}
+                </Text>
+              ) : (
+                <Text style={styles.resendLink} onPress={busy ? undefined : sendCode} accessibilityRole="button">
+                  Send a new code
+                </Text>
+              )}
             </>
           ) : (
             <>
@@ -513,9 +524,10 @@ function PasswordCard({ hasPassword }: { hasPassword: boolean }) {
               </Text>
               {message ? <InlineMessage message={message} /> : null}
               <Button
-                label="Email me a code"
-                onPress={() => run(async () => setCodeSentTo(await requestSetPasswordCode()))}
+                label={resend.remaining > 0 ? `Email me a code (${formatCountdown(resend.remaining)})` : 'Email me a code'}
+                onPress={sendCode}
                 loading={busy}
+                disabled={resend.remaining > 0}
               />
             </>
           )}
@@ -661,6 +673,14 @@ function InlineMessage({ message }: { message: NonNullable<Message> }) {
 }
 
 const styles = StyleSheet.create({
+  resendLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: spacing.xs,
+    cursor: 'pointer',
+  },
   dangerCard: {
     borderColor: 'rgba(255,92,92,0.35)',
   },
