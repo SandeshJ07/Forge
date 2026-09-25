@@ -1,9 +1,12 @@
+import re
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.crypto import email_index
+from app.core.crypto import email_index, keyed_hash
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.rate_limit import RateLimiter
@@ -18,6 +21,7 @@ from app.core.security import (
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
+    GoogleSignInRequest,
     RefreshRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
@@ -31,6 +35,12 @@ from app.schemas.auth import (
 )
 from app.services.email import EmailSendError, send_password_reset_code, send_verification_code
 from app.services.email_codes import TooManyCodesRequested, create_code, verify_and_consume_code
+from app.services.google_auth import (
+    GoogleSignInDisabled,
+    GoogleUnreachable,
+    InvalidGoogleToken,
+    verify_google_id_token,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -157,11 +167,72 @@ def sign_in(body: SignInRequest, db: Session = Depends(get_db)) -> TokenResponse
         .one_or_none()
     )
 
-    if user is None or not verify_password(body.password, user.password_hash):
+    # Google-only accounts have no password until they set one via "Forgot password".
+    if user is None or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     if not user.is_verified:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email before signing in")
+
+    return _token_response(user)
+
+
+def _username_from_email(db: Session, email: str) -> str:
+    """A free username from the email's local part, e.g. sam.lifts@… → sam_lifts (or sam_lifts_4821)."""
+    base = re.sub(r"[^a-zA-Z0-9_]", "_", email.split("@")[0]).strip("_")[:20] or "athlete"
+    if len(base) < 3:
+        base = f"{base}_fit"
+    candidate = base
+    while db.query(User.id).filter(User.username == candidate).first() is not None:
+        candidate = f"{base}_{secrets.randbelow(10_000):04d}"
+    return candidate
+
+
+@router.post("/google", response_model=TokenResponse, dependencies=[Depends(sign_in_limit)])
+def sign_in_with_google(body: GoogleSignInRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    """
+    Signs in (or up) with a Google ID token. Matches, in order: the Google
+    account already linked to a user; an existing user with the same email
+    (Google has verified it, so it's linked); otherwise a new account.
+    """
+    try:
+        identity = verify_google_id_token(body.id_token)
+    except (GoogleSignInDisabled, GoogleUnreachable) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InvalidGoogleToken as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    sub_hash = keyed_hash(identity.sub, "google-sub")
+    user = db.query(User).filter(User.google_sub_hash == sub_hash).one_or_none()
+    if user is None:
+        user = _user_by_email(db, identity.email)
+        if user is not None:
+            if not user.is_verified:
+                # Someone registered this email without ever proving they own it;
+                # Google just proved this person does. Drop the unproven password
+                # so its setter can't get into the real owner's account.
+                user.password_hash = None
+            user.google_sub_hash = sub_hash
+            user.is_verified = True
+        else:
+            email = identity.email.strip().lower()
+            user = User(
+                email=email,
+                email_hash=email_index(email),
+                username=_username_from_email(db, email),
+                password_hash=None,
+                google_sub_hash=sub_hash,
+                is_verified=True,
+            )
+            db.add(user)
+        try:
+            db.commit()
+        except IntegrityError as exc:  # a parallel request created/linked it first
+            db.rollback()
+            user = db.query(User).filter(User.google_sub_hash == sub_hash).one_or_none()
+            if user is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Please try again.") from exc
+        db.refresh(user)
 
     return _token_response(user)
 

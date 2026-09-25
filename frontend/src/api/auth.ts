@@ -48,6 +48,16 @@ export async function signIn(identifier: string, password: string): Promise<void
   await applySession(data);
 }
 
+/**
+ * Signs in (or up) with the ID token from Google Sign-In. The backend verifies
+ * it with Google, then signs into the linked account, links an existing
+ * account with the same email, or creates a new one.
+ */
+export async function signInWithGoogle(idToken: string): Promise<void> {
+  const data = await apiClient.post<TokenResponse>('/auth/google', { id_token: idToken }, { skipAuth: true });
+  await applySession(data);
+}
+
 export async function requestPasswordReset(email: string): Promise<void> {
   await apiClient.post('/auth/forgot-password', { email }, { skipAuth: true });
 }

@@ -1,0 +1,54 @@
+"""Verifies Google Sign-In ID tokens sent by the app (POST /auth/google)."""
+
+from dataclasses import dataclass
+
+import requests
+from google.auth.exceptions import TransportError
+from google.auth.transport.requests import Request
+from google.oauth2 import id_token
+
+from app.core.config import get_settings
+
+settings = get_settings()
+_session = requests.Session()
+
+
+class GoogleSignInDisabled(Exception):
+    pass
+
+
+class InvalidGoogleToken(Exception):
+    pass
+
+
+class GoogleUnreachable(Exception):
+    pass
+
+
+@dataclass
+class GoogleIdentity:
+    sub: str
+    email: str
+    name: str | None
+
+
+def verify_google_id_token(token: str) -> GoogleIdentity:
+    """
+    Checks the token's signature against Google's published keys, its issuer,
+    expiry, and that it was issued to one of our client IDs; then that Google
+    has verified the email. Only then is the email trusted to identify a user.
+    """
+    client_ids = settings.google_client_id_list
+    if not client_ids:
+        raise GoogleSignInDisabled("Google sign-in isn't set up on this server.")
+    try:
+        claims = id_token.verify_oauth2_token(token, Request(session=_session), audience=client_ids)
+    except TransportError as exc:  # couldn't fetch Google's signing keys
+        raise GoogleUnreachable("Couldn't reach Google to check your sign-in. Please try again.") from exc
+    except ValueError as exc:
+        raise InvalidGoogleToken("Google sign-in failed. Please try again.") from exc
+    if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise InvalidGoogleToken("Google sign-in failed. Please try again.")
+    if not claims.get("email") or not claims.get("email_verified"):
+        raise InvalidGoogleToken("Your Google account's email isn't verified.")
+    return GoogleIdentity(sub=str(claims["sub"]), email=str(claims["email"]), name=claims.get("name"))

@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # keys above. Users with their own key aren't limited. 0 disables the shared keys.
     shared_key_daily_plan_limit: int = 5
 
+    # Google Sign-In: OAuth client IDs (Google Cloud Console → Credentials) whose
+    # ID tokens are accepted — web, iOS and Android each have their own. Comma-
+    # separated; empty disables Google sign-in.
+    google_client_ids: str = ""
+
     storage_dir: str = "storage"
     cors_origins: str = "http://localhost:8081,http://localhost:19006"
 
@@ -72,6 +77,10 @@ class Settings(BaseSettings):
     def gemini_model_chain(self) -> list[str]:
         fallbacks = [m.strip() for m in self.gemini_fallback_models.split(",") if m.strip()]
         return list(dict.fromkeys([self.gemini_model, *fallbacks]))  # dedupe, keep order
+
+    @property
+    def google_client_id_list(self) -> list[str]:
+        return [cid.strip() for cid in self.google_client_ids.split(",") if cid.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

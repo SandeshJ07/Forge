@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { Logo } from '@/components/ui/Logo';
 import { PhotoBackdrop } from '@/components/ui/PhotoBackdrop';
 import { InstallNudge } from '@/components/InstallNudge';
+import { GoogleSignInButton, googleSignInAvailable } from '@/components/GoogleSignInButton';
 import { HERO_IMAGE } from '@/constants/images';
 import { colors, radii, spacing } from '@/constants/theme';
 import { useIsDesktopWeb } from '@/hooks/useResponsive';
@@ -51,6 +52,16 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  const handleGoogleError = useCallback((message: string) => setErrorMessage(message), []);
+
+  // Google first, then the email/password form, on both sign-in and sign-up.
+  const googleOption = googleSignInAvailable ? (
+    <>
+      <GoogleSignInButton onError={handleGoogleError} onStart={resetMessages} />
+      <OrDivider />
+    </>
+  ) : null;
 
   function resetMessages() {
     setErrorMessage(null);
@@ -148,6 +159,7 @@ export default function SignInScreen() {
 
       {mode === 'sign-in' && (
         <>
+          {googleOption}
           <TextField
             label="Username or email"
             autoCapitalize="none"
@@ -187,6 +199,7 @@ export default function SignInScreen() {
 
       {mode === 'sign-up' && (
         <>
+          {googleOption}
           <TextField
             label="Email"
             autoCapitalize="none"
@@ -365,6 +378,16 @@ function Banner({ tone, message }: { tone: 'error' | 'info'; message: string }) 
   );
 }
 
+function OrDivider() {
+  return (
+    <View style={styles.orRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={styles.orLine} />
+      <Text style={styles.orText}>or</Text>
+      <View style={styles.orLine} />
+    </View>
+  );
+}
+
 function SwitchPrompt({ prompt, action, onPress }: { prompt: string; action: string; onPress: () => void }) {
   return (
     <Text style={styles.switchPrompt}>
@@ -377,6 +400,20 @@ function SwitchPrompt({ prompt, action, onPress }: { prompt: string; action: str
 }
 
 const styles = StyleSheet.create({
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  orText: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
   flex: {
     flex: 1,
   },

@@ -18,6 +18,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     email_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # None for accounts created with Google sign-in until they set a password
+    # (via "Forgot password"); password sign-in is refused while it's None.
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Keyed hash of the Google account's stable "sub" id, once linked.
+    google_sub_hash: Mapped[str | None] = mapped_column(String, unique=True, index=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

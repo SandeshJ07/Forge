@@ -71,6 +71,7 @@ storage/              # uploaded files (progress photos), gitignored
 | Area | Routes |
 |---|---|
 | Auth | `POST /auth/sign-up`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /auth/sign-in`, `POST /auth/refresh`, `POST /auth/forgot-password`, `POST /auth/reset-password`, `PATCH /auth/username` |
+| Google sign-in | `POST /auth/google` (`{id_token}` → tokens; signs in, links by email, or creates the account) |
 | Profile | `GET/PATCH /profile`, `POST /profile/complete-onboarding` |
 | Exercises | `GET /exercises`, `GET /exercises/{id}`, `GET /exercises/muscle-groups`, `GET /exercises/equipment-options`, `GET /exercises/feedback/all`, `PUT /exercises/{id}/feedback` |
 | Workouts | `GET /workouts`, `POST /workouts` (manual log), `GET /workouts/{id}/sets`, `PATCH /workouts/{id}` (rate) |
@@ -93,6 +94,8 @@ Every route except auth and `GET /exercises*` requires `Authorization: Bearer <a
 
 ## Design notes
 
+- **Google sign-in** (`POST /auth/google`, `app/services/google_auth.py`): the app sends the ID token from Google Sign-In; the backend verifies its signature, issuer, expiry and audience (`GOOGLE_CLIENT_IDS`) with `google-auth`, and requires a Google-verified email. It then signs into the account already linked to that Google account (`users.google_sub_hash`, a keyed hash), else links the account with the same email — wiping the password first if that account was never verified, so whoever registered the address without owning it can't get in — else creates a new, verified account with no password and a username from the email. Password sign-in is refused while `password_hash` is empty; "Forgot password" sets one.
+  *Setup:* Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID (configure the consent screen first). Make a **Web** client with your app's origins as Authorized JavaScript origins **and** Authorized redirect URIs (e.g. `http://localhost:8081`, `https://your-domain`); add **iOS** / **Android** clients when you ship native builds. Put the IDs in the frontend's `EXPO_PUBLIC_GOOGLE_*_CLIENT_ID` and in `GOOGLE_CLIENT_IDS` here.
 - **Sensitive data is encrypted at rest** (`app/core/crypto.py`, `app/core/encrypted_types.py`), keyed by `DATA_ENCRYPTION_KEY` from `.env` — never stored in the database, so a database dump or backup on its own reveals none of it:
   - *Encrypted* (Fernet — AES-128 + HMAC, random IV; the app decrypts on read): `users.email`, `integration_tokens.access_token` (users' AI keys), `user_profiles.gender` / `birth_year` / `height_cm` / `plan_preferences`, `measurements.value`, `progress_photos.notes` and the photo files on disk, `workouts.notes`, `generated_plans.source_summary`. These columns can't be filtered or aggregated in SQL; the model column types handle it transparently.
   - *Hashed* (never readable, only compared): passwords (bcrypt), email codes (`email_codes.code_hash`, HMAC-SHA256 keyed by the same secret so a leaked table can't be brute-forced). Emails are looked up through `users.email_hash`, a keyed hash of the lower-cased address.

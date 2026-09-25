@@ -15,3 +15,6 @@ python-dotenv==1.0.1
 # IANA timezones incl. legacy aliases (Asia/Calcutta, US/Pacific) that browsers still report
 # and some OS images omit; zoneinfo falls back to this package.
 tzdata==2026.4
+# Verifies Google Sign-In ID tokens (app/services/google_auth.py); requests is its HTTP transport.
+google-auth==2.58.1
+requests==2.34.2
