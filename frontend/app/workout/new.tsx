@@ -286,6 +286,7 @@ export default function LogWorkoutScreen() {
             onRemoveSet={(i) => store.removeSet(ex.key, i)}
             onRemove={() => store.removeExercise(ex.key)}
             onRestChange={(seconds) => store.setRestSeconds(ex.key, seconds)}
+            onInfo={ex.exerciseId ? () => router.push(`/exercise/${ex.exerciseId}`) : undefined}
           />
         ))}
 
@@ -472,6 +473,7 @@ function ExerciseCard({
   onRemoveSet,
   onRemove,
   onRestChange,
+  onInfo,
 }: {
   exercise: SessionExercise;
   weightUnit: string;
@@ -483,6 +485,8 @@ function ExerciseCard({
   onRemoveSet: (setIndex: number) => void;
   onRemove: () => void;
   onRestChange: (seconds: number) => void;
+  /** Opens the exercise's how-to page; omitted for exercises not in the library. */
+  onInfo?: () => void;
 }) {
   const allDone = exercise.sets.every((s) => s.done);
   const meta = [
@@ -493,8 +497,21 @@ function ExerciseCard({
     <Card style={[styles.card, allDone && styles.cardDone]}>
       <View style={styles.exerciseHead}>
         <View style={styles.flex}>
-          <Text style={styles.cardTitle}>{exercise.name}</Text>
-          <Text style={styles.muted}>{meta.join(' · ')}</Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.cardTitle, styles.titleText]}>{exercise.name}</Text>
+            {onInfo ? (
+              <Pressable
+                onPress={onInfo}
+                accessibilityRole="button"
+                accessibilityLabel={`How to do ${exercise.name}`}
+                hitSlop={10}
+                style={styles.infoButton}
+              >
+                <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+              </Pressable>
+            ) : null}
+          </View>
+          {meta.length ? <Text style={styles.muted}>{meta.join(' · ')}</Text> : null}
         </View>
         {allDone ? <Ionicons name="checkmark-circle" size={22} color={colors.success} /> : null}
         <Text style={styles.removeLink} onPress={onRemove} accessibilityRole="button">
@@ -647,6 +664,9 @@ const styles = StyleSheet.create({
   warmupRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4, cursor: 'pointer' },
   warmupText: { color: colors.text, fontSize: 14, flex: 1 },
   struck: { color: colors.textMuted, textDecorationLine: 'line-through' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  titleText: { flexShrink: 1 },
+  infoButton: { cursor: 'pointer' },
   exerciseHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   removeLink: { color: colors.danger, fontSize: 13, fontWeight: '600', cursor: 'pointer' },
   notes: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic' },
