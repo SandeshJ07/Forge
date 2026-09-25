@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.encrypted_types import EncryptedString
 
 
 class IntegrationToken(Base):
@@ -25,5 +26,6 @@ class IntegrationToken(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     provider: Mapped[str] = mapped_column(String, primary_key=True, default="anthropic")
-    access_token: Mapped[str] = mapped_column(String, nullable=False)
+    # The user's API key, encrypted at rest; decrypted only for the AI call.
+    access_token: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

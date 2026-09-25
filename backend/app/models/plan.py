@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.encrypted_types import EncryptedJSON
 
 
 class GeneratedPlan(Base):
@@ -18,7 +19,8 @@ class GeneratedPlan(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     plan: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    source_summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Training summary + the preferences (incl. free-text notes) behind this plan; encrypted at rest.
+    source_summary: Mapped[dict] = mapped_column(EncryptedJSON, nullable=False, default=dict)
     accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Plans are generated in the background: the row is created as 'generating'
     # (with an empty plan) and flipped to 'ready' or 'failed' when the AI call ends.

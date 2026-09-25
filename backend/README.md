@@ -28,7 +28,7 @@ FastAPI + SQLAlchemy + Alembic backend for Forge, backed by a self-hosted Postgr
    ```bash
    cp .env.example .env
    ```
-   Fill in `DATABASE_URL`, a random `JWT_SECRET` (generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"`), and optionally `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY` as the shared key every user gets (subject to the daily limit).
+   Fill in `DATABASE_URL`, a random `JWT_SECRET` (generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"`), a `DATA_ENCRYPTION_KEY` (generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` — **back it up**, see Design notes), and optionally `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY` as the shared key every user gets (subject to the daily limit).
 
    **Email (verification + password reset codes):** set the `SMTP_*` values to send real email (for Gmail: `smtp.gmail.com`, port 587, an App Password). Leave `SMTP_HOST` empty in local dev and codes are printed to the backend's console instead — look for `[email:dev-fallback]` in the uvicorn output.
 4. **Run migrations**:
@@ -93,6 +93,11 @@ Every route except auth and `GET /exercises*` requires `Authorization: Bearer <a
 
 ## Design notes
 
+- **Sensitive data is encrypted at rest** (`app/core/crypto.py`, `app/core/encrypted_types.py`), keyed by `DATA_ENCRYPTION_KEY` from `.env` — never stored in the database, so a database dump or backup on its own reveals none of it:
+  - *Encrypted* (Fernet — AES-128 + HMAC, random IV; the app decrypts on read): `users.email`, `integration_tokens.access_token` (users' AI keys), `user_profiles.gender` / `birth_year` / `height_cm` / `plan_preferences`, `measurements.value`, `progress_photos.notes` and the photo files on disk, `workouts.notes`, `generated_plans.source_summary`. These columns can't be filtered or aggregated in SQL; the model column types handle it transparently.
+  - *Hashed* (never readable, only compared): passwords (bcrypt), email codes (`email_codes.code_hash`, HMAC-SHA256 keyed by the same secret so a leaked table can't be brute-forced). Emails are looked up through `users.email_hash`, a keyed hash of the lower-cased address.
+  - *Not encrypted*, because the app queries or aggregates them: usernames (public handle, used to sign in), workout dates/titles and set weights/reps (stats, personal records), exercise feedback, measurement type/date, plan contents. Put Postgres and `STORAGE_DIR` on encrypted disks (any managed Postgres does this by default) to cover these too.
+  - **Losing `DATA_ENCRYPTION_KEY` makes the encrypted data unrecoverable** — including every user's email, so nobody could sign in by email. Keep it in a secrets manager / password manager, separate from database backups. There is no key rotation yet.
 - **RLS is gone; authorization is enforced in Python.** Every query that touches user-owned data filters by `current_user.id` explicitly in the route/service code (see any `filter(Model.user_id == current_user.id)` call) — there's no database-level row security layer doing this automatically anymore, so a new endpoint that forgets this filter is a real bug class to watch for in review.
 - **Plan generation runs in the background.** `POST /plans/generate` stores a `generated_plans` row with `status='generating'`, returns 202 at once, and a FastAPI background task makes the AI call and flips the row to `ready` or `failed` (with a user-facing `error`). One job per user at a time (409 otherwise); jobs lost mid-flight (server restart) are marked failed after 6 minutes. `GET /plans`, `/plans/latest` only return `ready` plans.
 - **Gemini falls back across models.** On 429/5xx/timeouts/404 the Gemini client tries the next model in `GEMINI_MODEL` + `GEMINI_FALLBACK_MODELS` (default `gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.5-flash-lite`); key errors fail immediately. The model actually used is saved in the plan's `source_summary.model`.

@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.encrypted_types import EncryptedFloat, EncryptedInt, EncryptedJSON, EncryptedString
 
 
 class UserProfile(Base):
@@ -19,11 +20,6 @@ class UserProfile(Base):
         CheckConstraint(
             "plan_refresh_cadence in ('weekly','biweekly','monthly')", name="user_profiles_plan_refresh_cadence_check"
         ),
-        CheckConstraint(
-            "gender in ('male','female','other','prefer_not_to_say')", name="user_profiles_gender_check"
-        ),
-        CheckConstraint("birth_year between 1900 and 2100", name="user_profiles_birth_year_check"),
-        CheckConstraint("height_cm between 50 and 300", name="user_profiles_height_cm_check"),
         CheckConstraint("ai_provider in ('anthropic','gemini')", name="user_profiles_ai_provider_check"),
     )
 
@@ -41,10 +37,13 @@ class UserProfile(Base):
     )
     include_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     plan_refresh_cadence: Mapped[str] = mapped_column(String, nullable=False, default="weekly")
-    gender: Mapped[str | None] = mapped_column(String)
-    birth_year: Mapped[int | None] = mapped_column(Integer)
-    height_cm: Mapped[float | None] = mapped_column(Numeric)
+    # Personal / body data, encrypted at rest (app/core/crypto.py). Ranges are
+    # checked in UserProfileUpdate — the database can't see inside ciphertext.
+    gender: Mapped[str | None] = mapped_column(EncryptedString)
+    birth_year: Mapped[int | None] = mapped_column(EncryptedInt)
+    height_cm: Mapped[float | None] = mapped_column(EncryptedFloat)
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Last choices from the Plan preferences screen — saved the moment the user
     # taps "Create my plan", whether or not that generation then succeeds.
-    plan_preferences: Mapped[dict | None] = mapped_column(JSONB)
+    # Encrypted: its free-text notes can mention injuries or health conditions.
+    plan_preferences: Mapped[dict | None] = mapped_column(EncryptedJSON)

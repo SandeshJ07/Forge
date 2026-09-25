@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.encrypted_types import EncryptedString
 
 
 class Workout(Base):
@@ -31,7 +32,8 @@ class Workout(Base):
     perceived_exertion: Mapped[int | None] = mapped_column(SmallInteger)
     felt_rating: Mapped[str | None] = mapped_column(String)
     enjoyed: Mapped[bool | None] = mapped_column()
-    notes: Mapped[str | None] = mapped_column(String)
+    # Free text — may mention injuries or how the user felt; encrypted at rest.
+    notes: Mapped[str | None] = mapped_column(EncryptedString)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

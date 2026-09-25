@@ -9,6 +9,10 @@ class Settings(BaseSettings):
 
     database_url: str
     jwt_secret: str
+    # Encrypts sensitive data at rest (app/core/crypto.py). A Fernet key:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Back it up — encrypted data can't be read without it.
+    data_encryption_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
@@ -48,6 +52,21 @@ class Settings(BaseSettings):
         if not value or not value.strip() or value.strip().lower().startswith("your-"):
             return None
         return value.strip()
+
+    @field_validator("data_encryption_key")
+    @classmethod
+    def _valid_fernet_key(cls, value: str) -> str:
+        from cryptography.fernet import Fernet
+
+        value = value.strip()
+        try:
+            Fernet(value.encode())
+        except ValueError:
+            raise ValueError(
+                "DATA_ENCRYPTION_KEY must be a Fernet key. Generate one with: "
+                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            ) from None
+        return value
 
     @property
     def gemini_model_chain(self) -> list[str]:

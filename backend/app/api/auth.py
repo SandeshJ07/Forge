@@ -3,6 +3,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.crypto import email_index
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.rate_limit import RateLimiter
@@ -40,6 +41,11 @@ sign_in_limit = RateLimiter("sign-in", max_requests=10, window_seconds=60)
 sign_up_limit = RateLimiter("sign-up", max_requests=5, window_seconds=600)
 code_check_limit = RateLimiter("code-check", max_requests=10, window_seconds=60)
 code_send_limit = RateLimiter("code-send", max_requests=5, window_seconds=600)
+
+
+def _user_by_email(db: Session, email: str) -> User | None:
+    # Emails are encrypted at rest; look them up by their keyed hash.
+    return db.query(User).filter(User.email_hash == email_index(email)).one_or_none()
 
 
 EMAIL_UNAVAILABLE = "We couldn't send the email right now. Please try again in a few minutes."
@@ -82,7 +88,13 @@ def sign_up(body: SignUpRequest, db: Session = Depends(get_db)) -> SignUpRespons
     if db.query(User).filter(User.username == body.username).one_or_none() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is already taken")
 
-    user = User(email=body.email.lower(), username=body.username, password_hash=hash_password(body.password))
+    email = body.email.strip().lower()
+    user = User(
+        email=email,
+        email_hash=email_index(email),
+        username=body.username,
+        password_hash=hash_password(body.password),
+    )
     db.add(user)
     try:
         db.commit()
@@ -111,7 +123,7 @@ def sign_up(body: SignUpRequest, db: Session = Depends(get_db)) -> SignUpRespons
 
 @router.post("/verify-email", response_model=TokenResponse, dependencies=[Depends(code_check_limit)])
 def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    user = _user_by_email(db, body.email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
 
@@ -128,7 +140,7 @@ def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)) -> Tok
     "/resend-verification", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(code_send_limit)]
 )
 def resend_verification(body: ResendVerificationRequest, db: Session = Depends(get_db)) -> None:
-    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    user = _user_by_email(db, body.email)
     # Deliberately silent on a missing/already-verified account — this
     # response doesn't reveal whether the email exists, same reasoning as
     # forgot-password below.
@@ -138,8 +150,12 @@ def resend_verification(body: ResendVerificationRequest, db: Session = Depends(g
 
 @router.post("/sign-in", response_model=TokenResponse, dependencies=[Depends(sign_in_limit)])
 def sign_in(body: SignInRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    identifier = body.identifier.strip().lower()
-    user = db.query(User).filter(or_(User.email == identifier, User.username == body.identifier.strip())).one_or_none()
+    identifier = body.identifier.strip()
+    user = (
+        db.query(User)
+        .filter(or_(User.email_hash == email_index(identifier), User.username == identifier))
+        .one_or_none()
+    )
 
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -168,7 +184,7 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenRespons
     "/forgot-password", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(code_send_limit)]
 )
 def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)) -> None:
-    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    user = _user_by_email(db, body.email)
     # Always 204, whether or not the email exists — otherwise this endpoint
     # becomes a way to check which emails have accounts.
     if user is not None:
@@ -177,7 +193,7 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)) 
 
 @router.post("/reset-password", response_model=TokenResponse, dependencies=[Depends(code_check_limit)])
 def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.email == body.email.lower()).one_or_none()
+    user = _user_by_email(db, body.email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
 
