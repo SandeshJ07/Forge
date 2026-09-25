@@ -1,5 +1,10 @@
 import { apiClient } from '@/lib/apiClient';
-import type { GeneratedPlan, PlanGenerationStatus, PlanPreferences } from '@/types/database';
+import type { GeneratedPlan, PlanGenerationStatus, PlanPreferences, PlanUsage } from '@/types/database';
+
+/** The daily limit on the shared AI key resets at the user's local midnight. */
+function tzParam(): string {
+  return encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+}
 
 /**
  * Starts a background generation (POST /plans/generate → 202 with a
@@ -11,7 +16,11 @@ import type { GeneratedPlan, PlanGenerationStatus, PlanPreferences } from '@/typ
  * the one part of the stack with a real per-use cost.
  */
 export async function generatePlan(preferences: PlanPreferences = {}): Promise<GeneratedPlan> {
-  return apiClient.post<GeneratedPlan>('/plans/generate', { preferences });
+  return apiClient.post<GeneratedPlan>(`/plans/generate?tz=${tzParam()}`, { preferences });
+}
+
+export async function fetchPlanUsage(): Promise<PlanUsage> {
+  return apiClient.get<PlanUsage>(`/plans/usage?tz=${tzParam()}`);
 }
 
 export async function fetchGenerationStatus(): Promise<PlanGenerationStatus> {

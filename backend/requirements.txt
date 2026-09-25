@@ -10,3 +10,6 @@ bcrypt==4.2.1
 python-multipart==0.0.20
 httpx==0.28.1
 python-dotenv==1.0.1
+# IANA timezones incl. legacy aliases (Asia/Calcutta, US/Pacific) that browsers still report
+# and some OS images omit; zoneinfo falls back to this package.
+tzdata==2026.4

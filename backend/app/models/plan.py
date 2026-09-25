@@ -24,3 +24,5 @@ class GeneratedPlan(Base):
     # (with an empty plan) and flipped to 'ready' or 'failed' when the AI call ends.
     status: Mapped[str] = mapped_column(String, nullable=False, default="ready", server_default="ready")
     error: Mapped[str | None] = mapped_column(String)
+    # True when generated on the server's shared AI key — those count toward the daily limit.
+    used_shared_key: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

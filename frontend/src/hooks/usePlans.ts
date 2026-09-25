@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchGenerationStatus, fetchLatestPlan, fetchPlanHistory, generatePlan, setPlanAccepted } from '@/api/plans';
+import {
+  fetchGenerationStatus,
+  fetchLatestPlan,
+  fetchPlanHistory,
+  fetchPlanUsage,
+  generatePlan,
+  setPlanAccepted,
+} from '@/api/plans';
 import type { PlanPreferences } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
 
@@ -21,6 +28,17 @@ export function usePlanHistory() {
     queryKey: ['plan-history', userId],
     queryFn: fetchPlanHistory,
     enabled: Boolean(userId),
+  });
+}
+
+/** Today's generations on the shared AI key, and how many are left. */
+export function usePlanUsage() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  return useQuery({
+    queryKey: ['plan-usage', userId],
+    queryFn: fetchPlanUsage,
+    enabled: Boolean(userId),
+    staleTime: 0,
   });
 }
 
@@ -49,6 +67,10 @@ export function usePlanGeneration() {
       queryClient.invalidateQueries({ queryKey: ['latest-plan', userId] });
       queryClient.invalidateQueries({ queryKey: ['plan-history', userId] });
     }
+    // A failed generation doesn't count toward the daily limit, so it gives the use back.
+    if (previous.current === 'generating' && status === 'failed') {
+      queryClient.invalidateQueries({ queryKey: ['plan-usage', userId] });
+    }
     previous.current = status;
   }, [status, queryClient, userId]);
 
@@ -71,6 +93,8 @@ export function useGeneratePlan() {
       });
       queryClient.invalidateQueries({ queryKey: ['plan-generation', userId] });
     },
+    // Success uses one up; a 429 means the cached count was stale.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['plan-usage', userId] }),
   });
 }
 

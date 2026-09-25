@@ -2,25 +2,38 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_current_user
 from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.user import User
-from app.schemas.plan import GeneratePlanRequest, GeneratedPlanResponse, PlanGenerationStatus, SetPlanAcceptedRequest
+from app.schemas.plan import (
+    GeneratePlanRequest,
+    GeneratedPlanResponse,
+    PlanGenerationStatus,
+    PlanUsage,
+    SetPlanAcceptedRequest,
+)
 from app.services.ai_errors import AIRequestError
 from app.services.ai_providers import PROVIDER_NAMES
 from app.services.plan_generation import (
     NoAIKeyAvailable,
     PlanParseError,
     generate_plan_for_user,
-    resolve_provider_and_key,
+    local_day_start,
+    next_local_midnight,
+    resolve_ai_access,
+    shared_key_generations_since,
 )
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+settings = get_settings()
+
+TZ_QUERY = Query(default="UTC", description="IANA timezone, e.g. Asia/Kolkata — the daily limit resets at local midnight")
 logger = logging.getLogger(__name__)
 
 
@@ -88,6 +101,7 @@ def _ready_plans(db: Session, user_id: UUID):
 async def generate_plan(
     background_tasks: BackgroundTasks,
     body: GeneratePlanRequest | None = None,
+    tz: str = TZ_QUERY,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GeneratedPlan:
@@ -111,18 +125,38 @@ async def generate_plan(
     profile.plan_preferences = preferences
     db.commit()
 
-    job = _latest_job(db, current_user.id)
-    if job is not None and job.status == "generating":
+    _latest_job(db, current_user.id)  # expires stale jobs (commits)
+
+    # Lock the profile row so two simultaneous requests can't both pass the
+    # in-progress and daily-limit checks below; held until the commit that
+    # inserts the new job.
+    db.query(UserProfile).filter(UserProfile.user_id == current_user.id).with_for_update().one()
+
+    in_progress = (
+        db.query(GeneratedPlan.id)
+        .filter(GeneratedPlan.user_id == current_user.id, GeneratedPlan.status == "generating")
+        .first()
+    )
+    if in_progress is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A plan is already being generated.")
 
     # Fail fast on a missing key instead of queueing a job that can only fail.
-    provider, api_key = resolve_provider_and_key(db, current_user.id)
-    if not api_key:
+    access = resolve_ai_access(db, current_user.id)
+    if not access.api_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No {PROVIDER_NAMES[provider]} API key available. Add your own key in Settings, "
+            detail=f"No {PROVIDER_NAMES[access.provider]} API key available. Add your own key in Settings, "
             "switch AI provider, or configure a shared key on the server.",
         )
+
+    if not access.own_key:
+        limit = settings.shared_key_daily_plan_limit
+        if shared_key_generations_since(db, current_user.id, local_day_start(tz)) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"You've used all {limit} plan generations for today. They reset at midnight — "
+                "or add your own API key in Settings for unlimited generations.",
+            )
 
     plan = GeneratedPlan(
         user_id=current_user.id,
@@ -130,12 +164,31 @@ async def generate_plan(
         source_summary={"preferences": preferences},
         accepted=False,
         status="generating",
+        used_shared_key=not access.own_key,
     )
     db.add(plan)
     db.commit()
     db.refresh(plan)
     background_tasks.add_task(_run_generation, plan.id, current_user.id, preferences)
     return plan
+
+
+@router.get("/usage", response_model=PlanUsage)
+def get_usage(
+    tz: str = TZ_QUERY, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> PlanUsage:
+    access = resolve_ai_access(db, current_user.id)
+    day_start = local_day_start(tz)
+    used = shared_key_generations_since(db, current_user.id, day_start)
+    limit = None if access.own_key else settings.shared_key_daily_plan_limit
+    return PlanUsage(
+        own_key=access.own_key,
+        provider=access.provider,
+        limit=limit,
+        used=used,
+        remaining=None if limit is None else max(0, limit - used),
+        resets_at=next_local_midnight(day_start),
+    )
 
 
 @router.get("/generation", response_model=PlanGenerationStatus)

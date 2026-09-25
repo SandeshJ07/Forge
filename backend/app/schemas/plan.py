@@ -79,5 +79,18 @@ class PlanGenerationStatus(BaseModel):
     started_at: datetime | None = None
 
 
+class PlanUsage(BaseModel):
+    """Today's plan generations on the app's shared AI key. Users with their own key have no limit."""
+
+    own_key: bool
+    provider: Literal["anthropic", "gemini"]
+    # None when own_key (unlimited).
+    limit: int | None
+    used: int
+    remaining: int | None
+    # Next local midnight, when the count starts over.
+    resets_at: datetime
+
+
 class SetPlanAcceptedRequest(BaseModel):
     accepted: bool

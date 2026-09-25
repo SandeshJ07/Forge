@@ -14,6 +14,7 @@ import type { AIProvider } from '@/types/database';
 import { ApiError } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUserProfile, useUpsertUserProfile } from '@/hooks/useUserProfile';
+import { usePlanUsage } from '@/hooks/usePlans';
 import { EQUIPMENT_OPTIONS } from '@/constants/equipment';
 import { InstallAppSheet } from '@/components/InstallAppSheet';
 import { useIsMobileWeb } from '@/hooks/useResponsive';
@@ -118,6 +119,9 @@ export default function SettingsScreen() {
 
   const provider = providerInfo(profile?.ai_provider);
   const hasOwnKey = provider.value === 'gemini' ? profile?.gemini_api_key_set : profile?.anthropic_api_key_set;
+  const { data: usage } = usePlanUsage();
+  // Adding, removing or switching keys changes whether the daily limit applies.
+  const refreshUsage = () => queryClient.invalidateQueries({ queryKey: ['plan-usage'] });
 
   async function handleSaveAiKey() {
     setAiMessage(null);
@@ -126,7 +130,11 @@ export default function SettingsScreen() {
       await saveAiKey(provider.value, aiKeyInput.trim());
       setAiKeyInput('');
       await refetchProfile();
-      setAiMessage({ text: `${provider.name} key saved — new plans will use your account.`, isError: false });
+      refreshUsage();
+      setAiMessage({
+        text: `${provider.name} key saved — plan generation now has no daily limit and is billed to your account.`,
+        isError: false,
+      });
     } catch (err) {
       setAiMessage({
         text: err instanceof ApiError ? err.message : "That key didn't work. Check it and try again.",
@@ -141,12 +149,13 @@ export default function SettingsScreen() {
     setAiMessage(null);
     await clearAiKey(provider.value);
     await refetchProfile();
+    refreshUsage();
   }
 
   function handleChooseProvider(value: AIProvider) {
     setAiMessage(null);
     setAiKeyInput('');
-    upsertProfile.mutate({ ai_provider: value });
+    upsertProfile.mutate({ ai_provider: value }, { onSuccess: refreshUsage });
   }
 
   // Held locally so quick successive taps build on each other instead of each
@@ -299,7 +308,10 @@ export default function SettingsScreen() {
         </Card>
       </Section>
 
-      <Section title="AI plan generation" hint="Choose which AI builds your training plans.">
+      <Section
+        title="AI plan generation"
+        hint={`Plans are built with the app's AI — ${usage?.limit ?? 5} free generations a day. Optional: add your own key for unlimited use.`}
+      >
         <Card style={styles.card}>
           <Field label="Provider">
             <ChipGroup>
@@ -316,7 +328,7 @@ export default function SettingsScreen() {
           <Text style={styles.bodyText}>
             {hasOwnKey
               ? `Using your own ${provider.name} API key — plan generation is billed to your ${provider.company} account.`
-              : `Using the app's shared ${provider.name} key, if one is set up. Add your own to bill plan generation to your ${provider.company} account instead.`}
+              : `Using the app's built-in AI${usage?.remaining != null ? ` — ${usage.remaining} of ${usage.limit} generations left today` : ''}. For unlimited generations, add your own ${provider.name} API key below; usage is then billed to your ${provider.company} account.`}
           </Text>
           {aiMessage ? <InlineMessage message={aiMessage} /> : null}
           {hasOwnKey ? (

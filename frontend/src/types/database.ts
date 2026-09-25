@@ -146,6 +146,19 @@ export interface PlanGenerationStatus {
   started_at: string | null;
 }
 
+/** Today's plan generations on the app's shared AI key (GET /plans/usage). */
+export interface PlanUsage {
+  /** The user has their own key for their provider — no limit. */
+  own_key: boolean;
+  provider: AIProvider;
+  /** null when own_key. */
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  /** Next local midnight (ISO), when the count starts over. */
+  resets_at: string;
+}
+
 export interface IntegrationToken {
   user_id: string;
   provider: IntegrationProvider;
