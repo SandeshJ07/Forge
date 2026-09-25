@@ -1,0 +1,52 @@
+# Render Blueprint for the Forge API (FastAPI). The frontend is on Vercel.
+# Migrations are NOT run on deploy: the app's DB user (forge_app) can't change
+# tables. Run `alembic upgrade head` yourself with the Neon owner URL.
+services:
+  - type: web
+    name: forge-api
+    runtime: python
+    plan: free
+    region: ohio # closest to the Neon database (aws-us-east-2)
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: CORS_ORIGINS
+        value: https://forge-twin.vercel.app
+      - key: JWT_ALGORITHM
+        value: HS256
+      # Secrets: entered in the Render dashboard (or via the API), never committed.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATA_ENCRYPTION_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        sync: false
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_ADDRESS
+        sync: false
+      - key: SMTP_USE_TLS
+        sync: false
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        sync: false
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        sync: false
+      - key: EMAIL_CODE_EXPIRE_MINUTES
+        sync: false
