@@ -9,6 +9,7 @@ import {
 } from '@/api/measurements';
 import type { MeasurementType } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { FEATURES } from '@/constants/features';
 
 export function useMeasurements(type?: MeasurementType) {
   const userId = useAuthStore((s) => s.session?.userId);
@@ -57,7 +58,7 @@ export function useProgressPhotos() {
   return useQuery({
     queryKey: ['progress-photos', userId],
     queryFn: fetchProgressPhotos,
-    enabled: Boolean(userId),
+    enabled: Boolean(userId) && FEATURES.progressPhotos,
   });
 }
 

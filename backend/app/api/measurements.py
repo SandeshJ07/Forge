@@ -21,6 +21,11 @@ settings = get_settings()
 
 # Extension comes from the validated content type, never the client's filename,
 # so a file is always served back as an image.
+def require_photos_enabled() -> None:
+    if not settings.progress_photos_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Progress photos are turned off.")
+
+
 ALLOWED_PHOTO_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 # Progress photos are body images: stored encrypted (app/core/crypto.py) and
 # decrypted only when their owner requests them.
@@ -76,7 +81,11 @@ def delete_measurement(
     db.commit()
 
 
-@router.get("/photos", response_model=list[ProgressPhotoResponse])
+@router.get(
+    "/photos",
+    response_model=list[ProgressPhotoResponse],
+    dependencies=[Depends(require_photos_enabled)],
+)
 def list_progress_photos(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[ProgressPhoto]:
@@ -88,7 +97,12 @@ def list_progress_photos(
     )
 
 
-@router.post("/photos", response_model=ProgressPhotoResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/photos",
+    response_model=ProgressPhotoResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_photos_enabled)],
+)
 def upload_progress_photo(
     date: date_type,
     file: UploadFile = File(...),
@@ -118,7 +132,10 @@ def upload_progress_photo(
     return photo
 
 
-@router.get("/photos/{photo_id}/file")
+@router.get(
+    "/photos/{photo_id}/file",
+    dependencies=[Depends(require_photos_enabled)],
+)
 def get_progress_photo_file(
     photo_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Response:
@@ -138,7 +155,11 @@ def get_progress_photo_file(
     return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
-@router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/photos/{photo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_photos_enabled)],
+)
 def delete_progress_photo(
     photo_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> None:
