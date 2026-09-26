@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
+import { RefreshReminderPicker } from '@/components/RefreshReminderPicker';
 import { changePassword, deleteAccount, requestSetPasswordCode, signOutAndReset, updateUsername } from '@/api/auth';
 import { clearAiKey, saveAiKey } from '@/api/aiKeys';
 import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
@@ -21,18 +22,13 @@ import { GOAL_OPTIONS, MAX_GOALS, toggleGoal } from '@/constants/goals';
 import { InstallAppSheet } from '@/components/InstallAppSheet';
 import { useIsMobileWeb } from '@/hooks/useResponsive';
 import { usePwaInstall } from '@/lib/pwaInstall';
-import type { ExperienceLevel, Gender, PlanRefreshCadence, UnitSystem } from '@/types/database';
+import type { ExperienceLevel, Gender, UnitSystem } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
 const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: 'beginner', label: 'Beginner' },
   { value: 'intermediate', label: 'Intermediate' },
   { value: 'advanced', label: 'Advanced' },
-];
-const PLAN_CADENCES: { value: PlanRefreshCadence; label: string }[] = [
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'biweekly', label: 'Every 2 weeks' },
-  { value: 'monthly', label: 'Monthly' },
 ];
 const GENDERS: { value: Gender; label: string }[] = [
   { value: 'female', label: 'Female' },
@@ -247,16 +243,13 @@ export default function SettingsScreen() {
             ) : null}
           </Field>
           <Field label="Plan refresh reminder">
-            <ChipGroup>
-              {PLAN_CADENCES.map((c) => (
-                <Chip
-                  key={c.value}
-                  label={c.label}
-                  selected={profile?.plan_refresh_cadence === c.value}
-                  onPress={() => upsertProfile.mutate({ plan_refresh_cadence: c.value })}
-                />
-              ))}
-            </ChipGroup>
+            <RefreshReminderPicker
+              cadence={profile?.plan_refresh_cadence ?? 'monthly'}
+              days={profile?.plan_refresh_days ?? null}
+              onChange={(cadence, days) =>
+                upsertProfile.mutate({ plan_refresh_cadence: cadence, plan_refresh_days: days })
+              }
+            />
           </Field>
         </Card>
       </Section>

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -36,6 +36,10 @@ def update_profile(
     profile = _get_or_create_profile(db, current_user.id)
     for field, value in body.dump_set_fields().items():
         setattr(profile, field, value)
+    if profile.plan_refresh_cadence == "custom" and not profile.plan_refresh_days:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Choose how many days between plan refresh reminders."
+        )
     db.commit()
     db.refresh(profile)
     return profile

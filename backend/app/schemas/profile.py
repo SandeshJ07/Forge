@@ -22,6 +22,7 @@ class UserProfileResponse(BaseModel):
     gemini_api_key_set: bool
     include_warmup: bool
     plan_refresh_cadence: str
+    plan_refresh_days: int | None = None
     gender: str | None
     birth_year: int | None
     height_cm: float | None
@@ -38,7 +39,9 @@ class UserProfileUpdate(BaseModel):
     unit_system: str | None = None
     ai_provider: Literal["anthropic", "gemini"] | None = None
     include_warmup: bool | None = None
-    plan_refresh_cadence: str | None = None
+    # "custom" reminds every plan_refresh_days days (1-365).
+    plan_refresh_cadence: Literal["monthly", "custom"] | None = None
+    plan_refresh_days: int | None = Field(default=None, ge=1, le=365)
     # Stored encrypted, so the database can't enforce these — validated here instead.
     gender: Literal["male", "female", "other", "prefer_not_to_say"] | None = None
     birth_year: int | None = Field(default=None, ge=1900, le=2100)

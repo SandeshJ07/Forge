@@ -8,18 +8,11 @@ import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
 import { useLatestPlan, usePendingPlan, usePlanGeneration } from '@/hooks/usePlans';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { daysUntilPlanRefresh, isPlanRefreshDue } from '@/lib/planRefresh';
+import { daysUntilPlanRefresh, isPlanRefreshDue, refreshIntervalDays, refreshPeriodText } from '@/lib/planRefresh';
 import { formatDay } from '@/lib/format';
 import { planGroups } from '@/lib/planGroups';
 import { hasWorkoutInProgress, useWorkoutSessionStore } from '@/stores/useWorkoutSessionStore';
-import type { PlanRefreshCadence } from '@/types/database';
 import { colors, radii, spacing } from '@/constants/theme';
-
-const CADENCE_PERIOD: Record<PlanRefreshCadence, string> = {
-  weekly: 'a week',
-  biweekly: 'two weeks',
-  monthly: 'a month',
-};
 
 /**
  * The AI-built exercise groups. "Start workout" loads a group into the Log
@@ -54,9 +47,12 @@ export default function ExerciseGroupsScreen() {
     generation?.status === 'failed' &&
     (!latestPlan || new Date(generation.started_at ?? 0) > new Date(latestPlan.created_at));
 
-  const cadence = profile?.plan_refresh_cadence ?? 'weekly';
-  const refreshDue = isPlanRefreshDue(latestPlan?.created_at, cadence);
-  const daysUntil = daysUntilPlanRefresh(latestPlan?.created_at, cadence);
+  const cadence = profile?.plan_refresh_cadence ?? 'monthly';
+  const intervalDays = refreshIntervalDays(cadence, profile?.plan_refresh_days);
+  // Counted from when the plan became current, so loading an older plan back doesn't nag straight away.
+  const planSince = latestPlan ? latestPlan.accepted_at ?? latestPlan.created_at : null;
+  const refreshDue = isPlanRefreshDue(planSince, intervalDays);
+  const daysUntil = daysUntilPlanRefresh(planSince, intervalDays);
 
   // Every generation goes through the preferences screen first, so the user
   // can set training days and muscles before a (paid) AI call is made.
@@ -131,7 +127,7 @@ export default function ExerciseGroupsScreen() {
           <View style={styles.flex}>
             <Text style={styles.reminderTitle}>Time for fresh groups?</Text>
             <Text style={styles.mutedText}>
-              It's been {CADENCE_PERIOD[cadence]} since these were made. New ones will reflect your latest progress.
+              It's been {refreshPeriodText(cadence, profile?.plan_refresh_days)} since you started this plan. New ones will reflect your latest progress.
             </Text>
             <Text style={styles.link} onPress={handleGenerate} accessibilityRole="link">
               Make a new plan

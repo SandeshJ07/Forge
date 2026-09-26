@@ -16,7 +16,8 @@ export type TrackingType =
   | 'duration'
   | 'distance_duration'
   | 'weight_distance';
-export type PlanRefreshCadence = 'weekly' | 'biweekly' | 'monthly';
+/** "monthly" = every 30 days; "custom" = every plan_refresh_days days. */
+export type PlanRefreshCadence = 'monthly' | 'custom';
 export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
 export type MeasurementType =
   | 'body_weight'
@@ -196,6 +197,8 @@ export interface UserProfile {
   gemini_api_key_set: boolean;
   include_warmup: boolean;
   plan_refresh_cadence: PlanRefreshCadence;
+  /** Days between reminders when the cadence is "custom" (1-365). */
+  plan_refresh_days: number | null;
   gender: Gender | null;
   birth_year: number | null;
   height_cm: number | null;

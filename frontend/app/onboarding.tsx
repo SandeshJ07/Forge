@@ -27,6 +27,7 @@ import { TextField } from '@/components/ui/TextField';
 import { Logo } from '@/components/ui/Logo';
 import { OptionCard } from '@/components/ui/OptionCard';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
+import { RefreshReminderPicker } from '@/components/RefreshReminderPicker';
 import { PhotoBackdrop } from '@/components/ui/PhotoBackdrop';
 import { OnboardingProgressBar } from '@/components/OnboardingProgressBar';
 import { HERO_IMAGE, ONBOARDING_IMAGES, type OnboardingImageName } from '@/constants/images';
@@ -49,11 +50,6 @@ const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string; description: s
   { value: 'intermediate', label: 'Intermediate', description: 'Training consistently for 1–3 years' },
   { value: 'advanced', label: 'Advanced', description: '3+ years, confident with heavy compound lifts' },
 ];
-const PLAN_CADENCES: { value: PlanRefreshCadence; label: string }[] = [
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'biweekly', label: 'Every 2 weeks' },
-  { value: 'monthly', label: 'Monthly' },
-];
 const GENDERS: { value: Gender; label: string }[] = [
   { value: 'female', label: 'Female' },
   { value: 'male', label: 'Male' },
@@ -73,6 +69,7 @@ interface OnboardingData {
   experienceLevel: ExperienceLevel | null;
   equipment: string[];
   planCadence: PlanRefreshCadence;
+  planRefreshDays: number | null;
 }
 
 const INITIAL_DATA: OnboardingData = {
@@ -84,7 +81,8 @@ const INITIAL_DATA: OnboardingData = {
   goals: [],
   experienceLevel: null,
   equipment: [],
-  planCadence: 'weekly',
+  planCadence: 'monthly',
+  planRefreshDays: null,
 };
 
 interface StepProps {
@@ -283,16 +281,14 @@ const STEPS: OnboardingStep[] = [
     render: ({ data, update }) => (
       <View style={styles.fieldStack}>
         <Field label="Remind me every">
-          <ChipGroup>
-            {PLAN_CADENCES.map((c) => (
-              <Chip
-                key={c.value}
-                label={c.label}
-                selected={data.planCadence === c.value}
-                onPress={() => update('planCadence', c.value)}
-              />
-            ))}
-          </ChipGroup>
+          <RefreshReminderPicker
+            cadence={data.planCadence}
+            days={data.planRefreshDays}
+            onChange={(cadence, days) => {
+              update('planCadence', cadence);
+              update('planRefreshDays', days);
+            }}
+          />
         </Field>
       </View>
     ),
@@ -335,6 +331,7 @@ export default function OnboardingScreen() {
         experience_level: data.experienceLevel,
         equipment_access: data.equipment,
         plan_refresh_cadence: data.planCadence,
+        plan_refresh_days: data.planRefreshDays,
       });
 
       const parsedWeight = parseFloat(data.startingWeight);

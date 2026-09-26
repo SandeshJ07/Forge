@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, String
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Mapped, column_property, mapped_column
@@ -25,7 +25,12 @@ class UserProfile(Base):
         ),
         CheckConstraint("unit_system in ('metric','imperial')", name="user_profiles_unit_system_check"),
         CheckConstraint(
-            "plan_refresh_cadence in ('weekly','biweekly','monthly')", name="user_profiles_plan_refresh_cadence_check"
+            "plan_refresh_cadence in ('monthly','custom')", name="user_profiles_plan_refresh_cadence_check"
+        ),
+        # A custom reminder needs its own interval.
+        CheckConstraint(
+            "plan_refresh_cadence <> 'custom' OR plan_refresh_days BETWEEN 1 AND 365",
+            name="user_profiles_plan_refresh_days_check",
         ),
         CheckConstraint("ai_provider in ('anthropic','gemini')", name="user_profiles_ai_provider_check"),
     )
@@ -43,7 +48,9 @@ class UserProfile(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     include_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    plan_refresh_cadence: Mapped[str] = mapped_column(String, nullable=False, default="weekly")
+    # "monthly" (every 30 days) or "custom" (every plan_refresh_days days).
+    plan_refresh_cadence: Mapped[str] = mapped_column(String, nullable=False, default="monthly")
+    plan_refresh_days: Mapped[int | None] = mapped_column(Integer)
     # Personal / body data, encrypted at rest (app/core/crypto.py). Ranges are
     # checked in UserProfileUpdate — the database can't see inside ciphertext.
     gender: Mapped[str | None] = mapped_column(EncryptedString)
