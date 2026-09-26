@@ -6,7 +6,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
-import { useLatestPlan, usePlanGeneration } from '@/hooks/usePlans';
+import { useLatestPlan, usePendingPlan, usePlanGeneration } from '@/hooks/usePlans';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { daysUntilPlanRefresh, isPlanRefreshDue } from '@/lib/planRefresh';
 import { formatDay } from '@/lib/format';
@@ -28,6 +28,7 @@ const CADENCE_PERIOD: Record<PlanRefreshCadence, string> = {
 export default function ExerciseGroupsScreen() {
   const router = useRouter();
   const { data: latestPlan, isLoading } = useLatestPlan();
+  const { data: pendingPlan } = usePendingPlan();
   const { data: profile } = useUserProfile();
   const { data: generation } = usePlanGeneration();
   const activeSession = useWorkoutSessionStore((s) => s.session);
@@ -93,6 +94,24 @@ export default function ExerciseGroupsScreen() {
         </Card>
       ) : null}
 
+      {pendingPlan && !isGenerating ? (
+        <Card style={styles.reviewCard}>
+          <Ionicons name="sparkles" size={22} color={colors.primary} />
+          <View style={styles.flex}>
+            <Text style={styles.reminderTitle}>Your new plan is ready to review</Text>
+            <Text style={styles.mutedText}>
+              “{pendingPlan.plan.title}”.{' '}
+              {latestPlan
+                ? 'Your current plan stays until you accept the new one — you can edit it first, or keep what you have.'
+                : 'Look it over and adjust anything before you start using it.'}
+            </Text>
+            <View style={styles.reviewActions}>
+              <Button label="Review new plan" size="small" onPress={() => router.push('/plan/review')} />
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
       {lastFailed ? (
         <Card style={[styles.statusCard, styles.failedCard]}>
           <Ionicons name="alert-circle" size={22} color={colors.danger} />
@@ -106,7 +125,7 @@ export default function ExerciseGroupsScreen() {
         </Card>
       ) : null}
 
-      {latestPlan && refreshDue && !isGenerating ? (
+      {latestPlan && refreshDue && !isGenerating && !pendingPlan ? (
         <Card style={styles.reminderCard}>
           <Ionicons name="refresh-circle-outline" size={22} color={colors.warning} />
           <View style={styles.flex}>
@@ -121,7 +140,7 @@ export default function ExerciseGroupsScreen() {
         </Card>
       ) : null}
 
-      {!isLoading && !latestPlan && !isGenerating ? (
+      {!isLoading && !latestPlan && !isGenerating && !pendingPlan ? (
         <Card style={styles.emptyCard}>
           <Ionicons name="albums-outline" size={32} color={colors.primary} />
           <Text style={styles.emptyTitle}>No exercise groups yet</Text>
@@ -171,6 +190,16 @@ const styles = StyleSheet.create({
   },
   failedCard: {
     borderColor: 'rgba(255,92,92,0.35)',
+  },
+  reviewCard: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+    borderColor: colors.primary,
+  },
+  reviewActions: {
+    flexDirection: 'row',
+    marginTop: spacing.sm,
   },
   reminderCard: {
     flexDirection: 'row',

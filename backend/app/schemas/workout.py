@@ -35,6 +35,8 @@ class WorkoutSetResponse(BaseModel):
     duration_seconds: int | None
     distance_meters: float | None
     rpe: float | None
+    started_at: datetime | None
+    ended_at: datetime | None
 
 
 class ManualSetInput(BaseModel):
@@ -44,7 +46,11 @@ class ManualSetInput(BaseModel):
     exercise_name: str = Field(min_length=1, max_length=200)
     weight_kg: float | None = Field(default=None, ge=0, le=1000)
     reps: int | None = Field(default=None, ge=0, le=1000)
+    duration_seconds: int | None = Field(default=None, ge=0, le=24 * 3600)
+    distance_meters: float | None = Field(default=None, ge=0, le=1_000_000)
     rpe: float | None = Field(default=None, ge=0, le=10)
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 class LogManualWorkoutRequest(BaseModel):

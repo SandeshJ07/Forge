@@ -37,7 +37,8 @@ export function PlanGenerationPill() {
     return () => clearTimeout(timer);
   }, [status, jobId]);
 
-  const onPlanScreen = pathname === '/plan';
+  // The Plan tab and the review screen show a finished plan themselves.
+  const onPlanScreen = pathname === '/plan' || pathname.startsWith('/plan/review');
   const visible =
     jobId !== null &&
     jobId !== dismissedJobId &&
@@ -64,17 +65,18 @@ export function PlanGenerationPill() {
         <>
           <Ionicons name="checkmark-circle" size={24} color={colors.success} />
           <View style={styles.text}>
-            <Text style={styles.title}>Your exercise groups are ready</Text>
+            <Text style={styles.title}>Your new plan is ready</Text>
+            <Text style={styles.body}>Review it before it replaces your current one.</Text>
           </View>
           <Pressable
             onPress={() => {
               dismiss();
-              router.navigate('/plan');
+              router.navigate('/plan/review');
             }}
             style={styles.action}
             accessibilityRole="button"
           >
-            <Text style={styles.actionText}>View</Text>
+            <Text style={styles.actionText}>Review</Text>
           </Pressable>
         </>
       ) : (

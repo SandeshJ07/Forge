@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import distinct, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -23,7 +23,12 @@ def list_exercises(
 ) -> list[Exercise]:
     query = db.query(Exercise)
     if search:
-        query = query.filter(Exercise.name.ilike(f"%{search}%"))
+        # Every word must appear, in any order, in the name or an alias (old dataset
+        # names live there) — so "barbell bench" finds "Bench Press (Barbell)".
+        aliases = func.coalesce(func.array_to_string(Exercise.aliases, " "), "")
+        for word in search.split():
+            pattern = f"%{word}%"
+            query = query.filter(or_(Exercise.name.ilike(pattern), aliases.ilike(pattern)))
     if muscle_group:
         query = query.filter(Exercise.muscle_groups.any(muscle_group))
     if equipment:

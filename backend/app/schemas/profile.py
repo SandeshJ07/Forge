@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Goal = Literal["strength", "hypertrophy", "general_fitness", "endurance"]
+Goal = Literal["strength", "hypertrophy", "general_fitness", "endurance", "weight_loss"]
 MAX_GOALS = 2
 
 

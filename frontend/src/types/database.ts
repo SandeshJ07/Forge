@@ -3,11 +3,19 @@
 
 export type WorkoutSourceType = 'manual';
 export type ExerciseFeedbackRating = 'like' | 'dislike' | 'neutral';
-export type Goal = 'strength' | 'hypertrophy' | 'general_fitness' | 'endurance';
+export type Goal = 'strength' | 'hypertrophy' | 'general_fitness' | 'endurance' | 'weight_loss';
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 export type UnitSystem = 'metric' | 'imperial';
 export type AIProvider = 'anthropic' | 'gemini';
 export type IntegrationProvider = AIProvider;
+/** How an exercise is logged — see backend/app/services/exercise_catalog.py. */
+export type TrackingType =
+  | 'weight_reps'
+  | 'bodyweight_reps'
+  | 'weighted_bodyweight'
+  | 'duration'
+  | 'distance_duration'
+  | 'weight_distance';
 export type PlanRefreshCadence = 'weekly' | 'biweekly' | 'monthly';
 export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
 export type MeasurementType =
@@ -39,6 +47,7 @@ export interface Exercise {
   media_type: 'image' | 'gif' | null;
   category: string | null;
   source: string;
+  tracking_type: TrackingType;
   created_at: string;
 }
 
@@ -77,6 +86,8 @@ export interface WorkoutSet {
   duration_seconds: number | null;
   distance_meters: number | null;
   rpe: number | null;
+  started_at: string | null;
+  ended_at: string | null;
 }
 
 export interface Measurement {
@@ -133,7 +144,11 @@ export interface GeneratedPlan {
   created_at: string;
   plan: PlanPayload;
   source_summary: Record<string, unknown>;
+  /** True for the current plan (only one at a time). New plans wait for the user to accept them. */
   accepted: boolean;
+  accepted_at: string | null;
+  /** A new plan the user chose not to use; still in history. */
+  dismissed: boolean;
   status: 'generating' | 'ready' | 'failed';
   error: string | null;
 }
@@ -207,14 +222,24 @@ export interface PlanExercise {
   exercise_id: string | null;
   exercise_name: string;
   sets: number;
-  reps: string; // e.g. "8-10" or "AMRAP"
+  /** Target: reps ("8-10", "AMRAP"), a time ("45 s", "20 min") or a distance ("3 km"). */
+  reps: string;
   rest_seconds: number;
+  /** From the glossary when matched, else the AI's call; missing on older plans. */
+  tracking?: TrackingType | null;
+  /** e.g. "RIR 2", "~60 kg", "zone 2". */
+  intensity?: string;
+  /** Key setup and form cues. */
+  how_to?: string;
   notes?: string;
 }
 
 export interface WarmupExercise {
+  exercise_id?: string | null;
   exercise_name: string;
   duration_or_reps: string; // e.g. "5 min" or "2x15"
+  tracking?: TrackingType | null;
+  how_to?: string;
   notes?: string;
 }
 
@@ -224,6 +249,7 @@ export interface PlanGroup {
   focus: string; // e.g. "Chest, Shoulders, Triceps"
   /** Weekdays this group is mapped to; each weekday belongs to at most one group. */
   weekdays: Weekday[];
+  estimated_minutes?: number;
   warmup: WarmupExercise[];
   exercises: PlanExercise[];
 }
@@ -239,6 +265,8 @@ export interface LegacyPlanDay {
 export interface PlanPayload {
   title: string;
   rationale: string;
+  /** How to progress week to week; newer plans only. */
+  progression?: string;
   groups?: PlanGroup[];
   days?: LegacyPlanDay[];
 }

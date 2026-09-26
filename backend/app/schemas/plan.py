@@ -16,6 +16,8 @@ class GeneratedPlanResponse(BaseModel):
     plan: dict[str, Any]
     source_summary: dict[str, Any]
     accepted: bool
+    accepted_at: datetime | None
+    dismissed: bool
     status: str
     error: str | None
 
@@ -92,5 +94,7 @@ class PlanUsage(BaseModel):
     resets_at: datetime
 
 
-class SetPlanAcceptedRequest(BaseModel):
-    accepted: bool
+class UpdatePlanContentRequest(BaseModel):
+    """The whole edited plan (same shape the AI returns); normalised server-side before saving."""
+
+    plan: dict[str, Any]

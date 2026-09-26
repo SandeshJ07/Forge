@@ -1,7 +1,8 @@
 """
 One-time seed script: loads yuhonas/free-exercise-db's exercises.json
 (MIT-licensed, no API key required) and inserts them into the `exercises`
-table via SQLAlchemy, using this backend's own DATABASE_URL.
+table via SQLAlchemy, using this backend's own DATABASE_URL, then applies
+app/services/exercise_catalog.py (clearer names, tracking types, extra exercises).
 
 Usage (from backend/, with the venv active):
     python -m scripts.seed_exercises
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.database import SessionLocal  # noqa: E402
 from app.models.exercise import Exercise  # noqa: E402
+from app.services.exercise_catalog import apply_catalog  # noqa: E402
 
 SOURCE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
 
@@ -63,6 +65,10 @@ def main() -> None:
             db.commit()
             inserted += len(batch)
             print(f"Inserted {inserted}/{len(entries)}")
+        # Curated names, tracking types and the extra exercises (same as the catalog migration).
+        apply_catalog(db.connection())
+        db.commit()
+        print("Applied exercise catalog.")
     finally:
         db.close()
 

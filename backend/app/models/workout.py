@@ -55,3 +55,7 @@ class WorkoutSet(Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     distance_meters: Mapped[float | None] = mapped_column(Numeric)
     rpe: Mapped[float | None] = mapped_column(Numeric)
+    # When the set began / was finished. The first set's start and the last set's
+    # end give the exercise's start and end time.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

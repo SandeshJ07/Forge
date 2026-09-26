@@ -35,7 +35,8 @@ FastAPI + SQLAlchemy + Alembic backend for Forge, backed by a self-hosted Postgr
    ```bash
    alembic upgrade head
    ```
-5. **Seed the exercise glossary** (one-time, ~876 exercises from [free-exercise-db](https://github.com/yuhonas/free-exercise-db)):
+5. **Seed the exercise glossary** (one-time, ~876 exercises from [free-exercise-db](https://github.com/yuhonas/free-exercise-db),
+   then renamed, given tracking types and topped up with common missing movements by `app/services/exercise_catalog.py`):
    ```bash
    python -m scripts.seed_exercises
    ```

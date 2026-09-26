@@ -84,7 +84,11 @@ def log_manual_workout(
                 set_index=index,
                 weight_kg=set_input.weight_kg,
                 reps=set_input.reps,
+                duration_seconds=set_input.duration_seconds,
+                distance_meters=set_input.distance_meters,
                 rpe=set_input.rpe,
+                started_at=set_input.started_at,
+                ended_at=set_input.ended_at,
             )
         )
     db.commit()

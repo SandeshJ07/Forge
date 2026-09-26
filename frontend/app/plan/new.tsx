@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,6 +59,8 @@ function cleanDayFocus(raw: unknown): Partial<Record<Weekday, Muscle[]>> {
 
 export default function PlanPreferencesScreen() {
   const router = useRouter();
+  // "Regenerate with changes" from the review screen: same choices, plus what to change.
+  const revising = useLocalSearchParams<{ revise?: string }>().revise === '1';
   const { data: latestPlan, isPending: planPending } = useLatestPlan();
   const { data: profile, isPending: profilePending } = useUserProfile();
   const queryClient = useQueryClient();
@@ -134,7 +136,9 @@ export default function PlanPreferencesScreen() {
       // Returns as soon as the server has queued the job; the AI work runs in
       // the background and the floating status pill tracks it app-wide.
       await generatePlan.mutateAsync(preferences);
-      if (router.canGoBack()) router.back();
+      // A revision replaces the plan under review, so don't go back to it.
+      if (revising) router.replace('/plan');
+      else if (router.canGoBack()) router.back();
       else router.replace('/plan');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to generate exercise groups.');
@@ -239,9 +243,21 @@ export default function PlanPreferencesScreen() {
         </ChipGroup>
       </Section>
 
-      <Section title="Anything else?" hint="Optional — injuries, exercises to include, things to avoid.">
+      <Section
+        title={revising ? 'What should change?' : 'Anything else?'}
+        hint={
+          revising
+            ? 'Tell the AI what to do differently from the plan you just reviewed. Your current plan stays until you accept a new one.'
+            : 'Optional — injuries, exercises to include, things to avoid.'
+        }
+      >
         <TextField
-          placeholder="e.g. Sore left knee, no jumping. Want more back work."
+          placeholder={
+            revising
+              ? 'e.g. Fewer exercises per day, swap barbell rows for a machine row, add more cardio.'
+              : 'e.g. Sore left knee, no jumping. Want more back work.'
+          }
+          autoFocus={revising}
           value={notes}
           onChangeText={setNotes}
           multiline

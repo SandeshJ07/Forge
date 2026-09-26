@@ -64,7 +64,7 @@ async def create_message(api_key: str, models: list[str], prompt: str, max_token
     others are fine, so one busy model shouldn't fail the whole request.
     """
     tried: list[str] = []
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=180) as client:
         for model in models:
             tried.append(model)
             try:

@@ -16,13 +16,14 @@ from app.schemas.plan import (
     GeneratedPlanResponse,
     PlanGenerationStatus,
     PlanUsage,
-    SetPlanAcceptedRequest,
+    UpdatePlanContentRequest,
 )
 from app.services.ai_errors import AIRequestError
 from app.services.ai_providers import PROVIDER_NAMES
 from app.services.plan_generation import (
     NoAIKeyAvailable,
     PlanParseError,
+    finalize_plan_json,
     generate_plan_for_user,
     local_day_start,
     next_local_midnight,
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # A generation that hasn't finished in this long was lost (e.g. server restart
 # mid-call) — the AI call itself times out well before this.
-STALE_AFTER = timedelta(minutes=6)
+STALE_AFTER = timedelta(minutes=12)
 
 
 async def _run_generation(plan_id: UUID, user_id: UUID, preferences: dict) -> None:
@@ -206,22 +207,84 @@ def list_plans(current_user: User = Depends(get_current_user), db: Session = Dep
     return _ready_plans(db, current_user.id).all()
 
 
+def _current_plan(db: Session, user_id: UUID) -> GeneratedPlan | None:
+    return (
+        db.query(GeneratedPlan)
+        .filter(GeneratedPlan.user_id == user_id, GeneratedPlan.status == "ready", GeneratedPlan.accepted.is_(True))
+        .order_by(GeneratedPlan.accepted_at.desc().nulls_last())
+        .first()
+    )
+
+
+def _owned_ready_plan(db: Session, plan_id: UUID, user_id: UUID) -> GeneratedPlan:
+    plan = db.get(GeneratedPlan, plan_id)
+    if plan is None or plan.user_id != user_id or plan.status != "ready":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    return plan
+
+
 @router.get("/latest", response_model=GeneratedPlanResponse | None)
 def get_latest_plan(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> GeneratedPlan | None:
-    return _ready_plans(db, current_user.id).first()
+    """The user's current plan: the one they accepted most recently (not simply the newest generated)."""
+    return _current_plan(db, current_user.id)
 
 
-@router.patch("/{plan_id}", response_model=GeneratedPlanResponse)
-def set_plan_accepted(
+@router.get("/pending", response_model=GeneratedPlanResponse | None)
+def get_pending_plan(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> GeneratedPlan | None:
+    """A newly generated plan waiting for the user to accept, edit or dismiss it. It never replaces the current plan by itself."""
+    current = _current_plan(db, current_user.id)
+    query = _ready_plans(db, current_user.id).filter(
+        GeneratedPlan.accepted.is_(False), GeneratedPlan.dismissed.is_(False)
+    )
+    if current is not None and current.accepted_at is not None:
+        query = query.filter(GeneratedPlan.created_at > current.accepted_at)
+    return query.first()
+
+
+@router.post("/{plan_id}/accept", response_model=GeneratedPlanResponse)
+def accept_plan(
+    plan_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> GeneratedPlan:
+    """Makes this plan the current one — a freshly generated plan, or an older one loaded back from history."""
+    plan = _owned_ready_plan(db, plan_id, current_user.id)
+    db.query(GeneratedPlan).filter(
+        GeneratedPlan.user_id == current_user.id, GeneratedPlan.id != plan.id, GeneratedPlan.accepted.is_(True)
+    ).update({GeneratedPlan.accepted: False}, synchronize_session=False)
+    plan.accepted = True
+    plan.accepted_at = datetime.now(timezone.utc)
+    plan.dismissed = False
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@router.post("/{plan_id}/dismiss", response_model=GeneratedPlanResponse)
+def dismiss_plan(
+    plan_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> GeneratedPlan:
+    """Keeps the current plan; the dismissed one stays in history and can be loaded later."""
+    plan = _owned_ready_plan(db, plan_id, current_user.id)
+    if plan.accepted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The current plan can't be dismissed")
+    plan.dismissed = True
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@router.put("/{plan_id}/content", response_model=GeneratedPlanResponse)
+def update_plan_content(
     plan_id: UUID,
-    body: SetPlanAcceptedRequest,
+    body: UpdatePlanContentRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GeneratedPlan:
-    plan = db.get(GeneratedPlan, plan_id)
-    if plan is None or plan.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
-    plan.accepted = body.accepted
+    """Saves the user's own edits to a plan (e.g. while reviewing a new one before accepting it)."""
+    plan = _owned_ready_plan(db, plan_id, current_user.id)
+    try:
+        plan.plan = finalize_plan_json(db, dict(body.plan))
+    except PlanParseError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
     db.commit()
     db.refresh(plan)
     return plan

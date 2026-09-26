@@ -8,6 +8,7 @@ export const GOAL_OPTIONS: { value: Goal; label: string; description: string }[]
   { value: 'hypertrophy', label: 'Build muscle', description: 'Size and shape — moderate reps, more volume' },
   { value: 'general_fitness', label: 'General fitness', description: 'Feel fitter and move better day to day' },
   { value: 'endurance', label: 'Endurance', description: 'Go longer and recover faster' },
+  { value: 'weight_loss', label: 'Weight loss', description: 'Burn fat, keep muscle — strength plus cardio' },
 ];
 
 /** Tapping a picked goal removes it; tapping another adds it, unless MAX_GOALS are already picked. */

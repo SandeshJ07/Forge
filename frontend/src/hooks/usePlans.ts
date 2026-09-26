@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  acceptPlan,
+  dismissPlan,
   fetchGenerationStatus,
   fetchLatestPlan,
+  fetchPendingPlan,
   fetchPlanHistory,
   fetchPlanUsage,
   generatePlan,
-  setPlanAccepted,
+  updatePlanContent,
 } from '@/api/plans';
-import type { PlanPreferences } from '@/types/database';
+import type { PlanPayload, PlanPreferences } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 const POLL_MS = 3000;
@@ -18,6 +21,16 @@ export function useLatestPlan() {
   return useQuery({
     queryKey: ['latest-plan', userId],
     queryFn: fetchLatestPlan,
+    enabled: Boolean(userId),
+  });
+}
+
+/** A new plan waiting for the user to accept, edit or dismiss (null when there's none). */
+export function usePendingPlan() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  return useQuery({
+    queryKey: ['pending-plan', userId],
+    queryFn: fetchPendingPlan,
     enabled: Boolean(userId),
   });
 }
@@ -63,8 +76,9 @@ export function usePlanGeneration() {
   const status = query.data?.status;
   const previous = useRef(status);
   useEffect(() => {
+    // A finished plan waits for review (pending); the current plan only changes when the user accepts it.
     if (previous.current === 'generating' && status === 'ready') {
-      queryClient.invalidateQueries({ queryKey: ['latest-plan', userId] });
+      queryClient.invalidateQueries({ queryKey: ['pending-plan', userId] });
       queryClient.invalidateQueries({ queryKey: ['plan-history', userId] });
     }
     // A failed generation doesn't count toward the daily limit, so it gives the use back.
@@ -98,15 +112,38 @@ export function useGeneratePlan() {
   });
 }
 
-export function useSetPlanAccepted() {
+/** Every plan query — accepting, dismissing or editing a plan can change any of them. */
+function invalidatePlans(queryClient: ReturnType<typeof useQueryClient>, userId: string | undefined) {
+  for (const key of ['latest-plan', 'pending-plan', 'plan-history']) {
+    queryClient.invalidateQueries({ queryKey: [key, userId] });
+  }
+}
+
+/** Makes a plan the current one (a reviewed new plan, or one loaded back from history). */
+export function useAcceptPlan() {
   const userId = useAuthStore((s) => s.session?.userId);
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ planId, accepted }: { planId: string; accepted: boolean }) =>
-      setPlanAccepted(planId, accepted),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['latest-plan', userId] });
-      queryClient.invalidateQueries({ queryKey: ['plan-history', userId] });
-    },
+    mutationFn: (planId: string) => acceptPlan(planId),
+    onSuccess: () => invalidatePlans(queryClient, userId),
+  });
+}
+
+/** Keeps the current plan and sets the reviewed one aside (it stays in history). */
+export function useDismissPlan() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => dismissPlan(planId),
+    onSuccess: () => invalidatePlans(queryClient, userId),
+  });
+}
+
+export function useUpdatePlanContent() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ planId, plan }: { planId: string; plan: PlanPayload }) => updatePlanContent(planId, plan),
+    onSuccess: () => invalidatePlans(queryClient, userId),
   });
 }

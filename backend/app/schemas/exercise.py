@@ -21,6 +21,7 @@ class ExerciseResponse(BaseModel):
     media_type: str | None
     category: str | None
     source: str
+    tracking_type: str
     created_at: datetime
 
 

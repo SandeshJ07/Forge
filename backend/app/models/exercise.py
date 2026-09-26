@@ -13,6 +13,11 @@ class Exercise(Base):
     __table_args__ = (
         CheckConstraint("difficulty in ('beginner','intermediate','advanced')", name="exercises_difficulty_check"),
         CheckConstraint("media_type in ('image','gif')", name="exercises_media_type_check"),
+        CheckConstraint(
+            "tracking_type in ('weight_reps','bodyweight_reps','weighted_bodyweight','duration',"
+            "'distance_duration','weight_distance')",
+            name="exercises_tracking_type_check",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -29,6 +34,8 @@ class Exercise(Base):
     media_type: Mapped[str | None] = mapped_column(String)
     category: Mapped[str | None] = mapped_column(String)
     source: Mapped[str] = mapped_column(String, nullable=False, default="free-exercise-db")
+    # How a set is logged — see app/services/exercise_catalog.py.
+    tracking_type: Mapped[str] = mapped_column(String, nullable=False, default="weight_reps", server_default="weight_reps")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

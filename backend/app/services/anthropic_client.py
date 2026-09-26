@@ -23,7 +23,7 @@ async def validate_key(api_key: str, model: str) -> None:
 
 
 async def create_message(api_key: str, model: str, prompt: str, max_tokens: int) -> str:
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=180) as client:
         response = await client.post(
             ANTHROPIC_MESSAGES_URL,
             headers=_headers(api_key),

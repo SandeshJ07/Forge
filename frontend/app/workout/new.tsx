@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { DatePickerField } from '@/components/ui/DatePickerField';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ExerciseListItem } from '@/components/ExerciseListItem';
 import { formatClock, useNow } from '@/components/WorkoutSessionOverlay';
 import { useExercises } from '@/hooks/useExercises';
@@ -19,14 +20,25 @@ import { useUnitStore } from '@/stores/useUnitStore';
 import {
   MAX_REST_SECONDS,
   MIN_REST_SECONDS,
+  exerciseEndTime,
   useWorkoutSessionStore,
   type SessionExercise,
+  type SetField,
 } from '@/stores/useWorkoutSessionStore';
 import { primeRestChime } from '@/lib/restChime';
 import { formatWeight, LB_PER_KG } from '@/lib/format';
+import {
+  TRACKING_FIELDS,
+  distanceUnit,
+  parseDuration,
+  targetToDistance,
+  targetToReps,
+  targetToTime,
+  toMeters,
+} from '@/lib/tracking';
 import { ApiError } from '@/lib/apiClient';
 import { formatWeekdays, planGroups, todayWeekday } from '@/lib/planGroups';
-import type { PlanGroup } from '@/types/database';
+import type { Exercise, PlanGroup, UnitSystem } from '@/types/database';
 import { colors, radii, spacing } from '@/constants/theme';
 
 const MIN_SEARCH_CHARS = 2;
@@ -40,6 +52,18 @@ function parseNumber(value: string): number | null {
 
 function isSameDay(a: number, b: number): boolean {
   return new Date(a).toDateString() === new Date(b).toDateString();
+}
+
+/** The same time of day, moved onto `day` — exercise times follow the workout if it's back-dated. */
+function onDay(time: number, day: number): number {
+  const at = new Date(day);
+  const t = new Date(time);
+  at.setHours(t.getHours(), t.getMinutes(), t.getSeconds(), 0);
+  return at.getTime();
+}
+
+function hasValue(set: SessionExercise['sets'][number]): boolean {
+  return Boolean(set.weight.trim() || set.reps.trim() || set.distance.trim() || set.time.trim());
 }
 
 /**
@@ -97,8 +121,9 @@ export default function LogWorkoutScreen() {
   const rest = session?.rest ?? null;
   const restRemaining = rest ? (rest.endsAt - now) / 1000 : 0;
 
-  function addFromSearch(exerciseId: string, name: string) {
-    store.addExercise({ exerciseId, name, sets: 3 });
+  function addFromSearch(exercise: Exercise) {
+    const timed = TRACKING_FIELDS[exercise.tracking_type].time;
+    store.addExercise({ exerciseId: exercise.id, name: exercise.name, tracking: exercise.tracking_type, sets: timed ? 1 : 3 });
     setSearch('');
     setSearchOpen(false);
   }
@@ -112,28 +137,48 @@ export default function LogWorkoutScreen() {
   async function handleSave() {
     if (!session) return;
     setErrorMessage(null);
-    const sets = session.exercises.flatMap((ex) =>
-      ex.sets
-        .filter((s) => s.done || s.weight.trim() || s.reps.trim())
-        .map((s) => {
-          const weight = parseNumber(s.weight);
-          const reps = parseNumber(s.reps);
-          return {
-            exerciseId: ex.exerciseId,
-            exerciseName: ex.name,
-            weightKg: weight === null ? null : unitSystem === 'imperial' ? weight / LB_PER_KG : weight,
-            reps: reps === null ? null : Math.round(reps),
-            rpe: null,
-          };
-        })
-    );
+    const toIso = (ms: number | undefined) => (ms ? new Date(onDay(ms, session.date)).toISOString() : null);
+    const spans: { start: number; end: number }[] = [];
+    const sets = session.exercises.flatMap((ex) => {
+      const fields = TRACKING_FIELDS[ex.tracking];
+      const unit = distanceUnit(ex.tracking, unitSystem);
+      const logged = ex.sets.filter((s) => s.done || hasValue(s));
+      // Saving finishes the workout: an exercise ends at its last ticked set even if some sets were skipped.
+      const doneTimes = logged.map((s) => s.doneAt ?? 0).filter(Boolean);
+      const end = exerciseEndTime(ex) ?? (doneTimes.length ? Math.max(...doneTimes) : undefined);
+      if (ex.startedAt && end) spans.push({ start: onDay(ex.startedAt, session.date), end: onDay(end, session.date) });
+      return logged.map((s, i) => {
+        const weight = fields.weight ? parseNumber(s.weight) : null;
+        const reps = fields.reps ? parseNumber(s.reps) : null;
+        const distance = fields.distance ? parseNumber(s.distance) : null;
+        return {
+          exerciseId: ex.exerciseId,
+          exerciseName: ex.name,
+          weightKg: weight === null ? null : unitSystem === 'imperial' ? weight / LB_PER_KG : weight,
+          reps: reps === null ? null : Math.round(reps),
+          durationSeconds: fields.time ? parseDuration(s.time, ex.tracking) : null,
+          distanceMeters: distance === null ? null : Math.round(toMeters(distance, unit) * 10) / 10,
+          rpe: null,
+          // Recorded automatically: the first set carries the exercise's start, each set its finish.
+          startedAt: i === 0 ? toIso(ex.startedAt) : null,
+          endedAt: toIso(s.doneAt),
+        };
+      });
+    });
     if (!sets.length) {
-      setErrorMessage('Enter at least one set (weight or reps), or tick one off, before saving.');
+      setErrorMessage('Enter at least one set, or tick one off, before saving.');
       return;
     }
-    // Live sessions keep their real start time and duration; back-dated ones land at local noon.
-    const workoutDate = loggingToday ? new Date(session.startedAt) : new Date(new Date(session.date).setHours(12, 0, 0, 0));
-    const duration = loggingToday ? Math.round((Date.now() - session.startedAt) / 1000) : null;
+    const workoutDate = new Date(session.date);
+    // From the exercises' own times when there are any; otherwise, for a live session, from when logging began.
+    const plausible = (seconds: number) => seconds > 0 && seconds <= 24 * 3600;
+    // From the exercises' own recorded times when there are any;
+    // otherwise, for a live session, from when logging began.
+    const fromExercises = spans.length
+      ? Math.round((Math.max(...spans.map((s) => s.end)) - Math.min(...spans.map((s) => s.start))) / 1000)
+      : 0;
+    const live = loggingToday ? Math.round((Date.now() - session.startedAt) / 1000) : 0;
+    const duration = plausible(fromExercises) ? fromExercises : plausible(live) ? live : null;
     try {
       const result = await logWorkout.mutateAsync({
         title: session.title.trim() || 'Workout',
@@ -193,12 +238,13 @@ export default function LogWorkoutScreen() {
   return (
     <View style={styles.root}>
       <ScreenContainer>
+        <TextField label="Title" value={session?.title ?? 'Workout'} onChangeText={store.setTitle} />
         <View style={styles.row}>
           <View style={styles.flex}>
-            <TextField label="Title" value={session?.title ?? 'Workout'} onChangeText={store.setTitle} />
-          </View>
-          <View style={styles.dateField}>
             <DatePickerField label="Date" value={new Date(date)} onChange={store.setDate} />
+          </View>
+          <View style={styles.flex}>
+            <TimePickerField label="Start time" value={new Date(date)} onChange={store.setDateTime} />
           </View>
         </View>
 
@@ -254,27 +300,49 @@ export default function LogWorkoutScreen() {
           <Card style={styles.card}>
             <Text style={styles.cardTitle}>Warm-up</Text>
             {session.warmup.map((w, i) => (
-              <Pressable
-                key={i}
-                onPress={() => store.toggleWarmup(i)}
-                style={styles.warmupRow}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: w.done }}
-              >
-                <Ionicons name={w.done ? 'checkbox' : 'square-outline'} size={20} color={w.done ? colors.success : colors.textMuted} />
-                <Text style={[styles.warmupText, w.done && styles.struck]}>
-                  {w.name} — {w.detail}
-                </Text>
-              </Pressable>
+              <View key={i} style={styles.warmupRow}>
+                <Pressable
+                  onPress={() => store.toggleWarmup(i)}
+                  style={styles.warmupCheck}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: w.done }}
+                  accessibilityLabel={`${w.name}, ${w.detail}`}
+                >
+                  <Ionicons name={w.done ? 'checkbox' : 'square-outline'} size={20} color={w.done ? colors.success : colors.textMuted} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.warmupText, w.done && styles.struck]}>
+                      {w.name} — {w.detail}
+                    </Text>
+                    {w.howTo && !w.done ? <Text style={styles.warmupHowTo}>{w.howTo}</Text> : null}
+                  </View>
+                </Pressable>
+                {w.exerciseId ? (
+                  <Pressable
+                    onPress={() => router.push(`/exercise/${w.exerciseId}`)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`How to do ${w.name}`}
+                    hitSlop={10}
+                    style={styles.infoButton}
+                  >
+                    <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+                  </Pressable>
+                ) : null}
+              </View>
             ))}
           </Card>
         ) : null}
 
-        {exercises.map((ex) => (
+        {exercises.map((ex, index) => (
           <ExerciseCard
             key={ex.key}
             exercise={ex}
+            now={now}
+            unitSystem={unitSystem}
             weightUnit={weightUnit}
+            onMove={(delta) => store.moveExercise(ex.key, delta)}
+            canMoveUp={index > 0}
+            canMoveDown={index < exercises.length - 1}
+            onTimer={(i) => store.toggleSetTimer(ex.key, i)}
             best={ex.exerciseId ? bestByExercise.get(ex.exerciseId) : undefined}
             bestLabel={(kg) => formatWeight(kg, unitSystem)}
             onChange={(i, field, value) => store.updateSet(ex.key, i, field, value)}
@@ -315,7 +383,7 @@ export default function LogWorkoutScreen() {
               <Text style={styles.muted}>Searching…</Text>
             ) : results?.length ? (
               results.slice(0, SEARCH_RESULT_LIMIT).map((exercise) => (
-                <ExerciseListItem key={exercise.id} exercise={exercise} onPress={() => addFromSearch(exercise.id, exercise.name)} />
+                <ExerciseListItem key={exercise.id} exercise={exercise} onPress={() => addFromSearch(exercise)} />
               ))
             ) : (
               <Text style={styles.muted}>No exercises match “{query}”.</Text>
@@ -464,9 +532,15 @@ function PlanGroupsSheet({
 
 function ExerciseCard({
   exercise,
+  now,
+  unitSystem,
   weightUnit,
   best,
   bestLabel,
+  canMoveUp,
+  canMoveDown,
+  onMove,
+  onTimer,
   onChange,
   onToggle,
   onAddSet,
@@ -476,10 +550,16 @@ function ExerciseCard({
   onInfo,
 }: {
   exercise: SessionExercise;
+  now: number;
+  unitSystem: UnitSystem;
   weightUnit: string;
   best?: number;
   bestLabel: (kg: number) => string;
-  onChange: (setIndex: number, field: 'weight' | 'reps', value: string) => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMove: (delta: -1 | 1) => void;
+  onTimer: (setIndex: number) => void;
+  onChange: (setIndex: number, field: SetField, value: string) => void;
   onToggle: (setIndex: number) => void;
   onAddSet: () => void;
   onRemoveSet: (setIndex: number) => void;
@@ -488,11 +568,32 @@ function ExerciseCard({
   /** Opens the exercise's how-to page; omitted for exercises not in the library. */
   onInfo?: () => void;
 }) {
-  const allDone = exercise.sets.every((s) => s.done);
+  const fields = TRACKING_FIELDS[exercise.tracking];
+  const distUnit = distanceUnit(exercise.tracking, unitSystem);
+  const allDone = exercise.sets.length > 0 && exercise.sets.every((s) => s.done);
+  const started = exercise.startedAt;
+  const ended = exerciseEndTime(exercise);
   const meta = [
     exercise.targetReps ? `${exercise.sets.length} × ${exercise.targetReps}` : null,
-    best ? `best ${bestLabel(best)}` : null,
+    best && fields.weight ? `best ${bestLabel(best)}` : null,
   ].filter(Boolean);
+
+  // Placeholders show the plan's target so an untouched, ticked set reads as "done as planned".
+  const placeholders = {
+    weight: '0',
+    reps: targetToReps(exercise.targetReps) || '0',
+    distance: targetToDistance(exercise.targetReps, distUnit) || '0',
+    time: targetToTime(exercise.targetReps) || (exercise.tracking === 'duration' ? '0:45' : '20:00'),
+  };
+  const columns: { field: SetField; label: string; keyboard: 'decimal-pad' | 'number-pad' | 'numbers-and-punctuation' }[] = [
+    ...(fields.weight ? [{ field: 'weight' as const, label: fields.addedWeight ? `+${weightUnit}` : weightUnit, keyboard: 'decimal-pad' as const }] : []),
+    ...(fields.distance ? [{ field: 'distance' as const, label: distUnit, keyboard: 'decimal-pad' as const }] : []),
+    ...(fields.reps ? [{ field: 'reps' as const, label: 'Reps', keyboard: 'number-pad' as const }] : []),
+    ...(fields.time ? [{ field: 'time' as const, label: 'Time', keyboard: 'numbers-and-punctuation' as const }] : []),
+  ];
+
+  const elapsed = started ? Math.max(0, ((ended ?? now) - started) / 1000) : 0;
+
   return (
     <Card style={[styles.card, allDone && styles.cardDone]}>
       <View style={styles.exerciseHead}>
@@ -514,85 +615,151 @@ function ExerciseCard({
           {meta.length ? <Text style={styles.muted}>{meta.join(' · ')}</Text> : null}
         </View>
         {allDone ? <Ionicons name="checkmark-circle" size={22} color={colors.success} /> : null}
+        <View style={styles.moveButtons}>
+          <Pressable
+            onPress={() => onMove(-1)}
+            disabled={!canMoveUp}
+            accessibilityRole="button"
+            accessibilityLabel={`Move ${exercise.name} up`}
+            hitSlop={6}
+            style={[styles.moveButton, !canMoveUp && styles.restStepDisabled]}
+          >
+            <Ionicons name="chevron-up" size={16} color={colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={() => onMove(1)}
+            disabled={!canMoveDown}
+            accessibilityRole="button"
+            accessibilityLabel={`Move ${exercise.name} down`}
+            hitSlop={6}
+            style={[styles.moveButton, !canMoveDown && styles.restStepDisabled]}
+          >
+            <Ionicons name="chevron-down" size={16} color={colors.text} />
+          </Pressable>
+        </View>
         <Text style={styles.removeLink} onPress={onRemove} accessibilityRole="button">
           Remove
         </Text>
       </View>
       {exercise.notes ? <Text style={styles.notes}>{exercise.notes}</Text> : null}
 
-      <View style={styles.restEdit}>
-        <Ionicons name="timer-outline" size={16} color={colors.textMuted} />
-        <Text style={[styles.muted, styles.flex]}>Rest between sets</Text>
-        <Pressable
-          onPress={() => onRestChange(exercise.restSeconds - REST_STEP_SECONDS)}
-          disabled={exercise.restSeconds <= MIN_REST_SECONDS}
-          accessibilityRole="button"
-          accessibilityLabel={`Shorter rest for ${exercise.name}`}
-          hitSlop={6}
-          style={[styles.restStep, exercise.restSeconds <= MIN_REST_SECONDS && styles.restStepDisabled]}
-        >
-          <Ionicons name="remove" size={16} color={colors.text} />
-        </Pressable>
-        <Text style={styles.restValue} accessibilityLabel={`Rest ${formatClock(exercise.restSeconds)}`}>
-          {formatClock(exercise.restSeconds)}
-        </Text>
-        <Pressable
-          onPress={() => onRestChange(exercise.restSeconds + REST_STEP_SECONDS)}
-          disabled={exercise.restSeconds >= MAX_REST_SECONDS}
-          accessibilityRole="button"
-          accessibilityLabel={`Longer rest for ${exercise.name}`}
-          hitSlop={6}
-          style={[styles.restStep, exercise.restSeconds >= MAX_REST_SECONDS && styles.restStepDisabled]}
-        >
-          <Ionicons name="add" size={16} color={colors.text} />
-        </Pressable>
-      </View>
+      {/* Start and finish are recorded automatically and saved with the sets; only the elapsed time is shown. */}
+      {started ? (
+        <View style={styles.timingRow} accessibilityLabel={`${ended ? 'Took' : 'Elapsed'} ${formatClock(elapsed)}`}>
+          <Ionicons name={ended ? 'checkmark-done-outline' : 'stopwatch-outline'} size={15} color={colors.textMuted} />
+          <Text style={styles.muted}>{ended ? 'Took' : 'Elapsed'}</Text>
+          <Text style={[styles.elapsed, !ended && styles.elapsedLive]}>{formatClock(elapsed)}</Text>
+        </View>
+      ) : null}
 
-      <View style={styles.setRow}>
-        <Text style={[styles.colLabel, styles.setCol]}>Set</Text>
-        <Text style={[styles.colLabel, styles.inputCol]}>{weightUnit}</Text>
-        <Text style={[styles.colLabel, styles.inputCol]}>Reps</Text>
-        <View style={styles.checkCol} />
-      </View>
-      {exercise.sets.map((set, i) => (
-        <View key={i} style={[styles.setRow, set.done && styles.setRowDone]}>
+      {exercise.sets.length > 1 || !fields.time ? (
+        <View style={styles.restEdit}>
+          <Ionicons name="timer-outline" size={16} color={colors.textMuted} />
+          <Text style={[styles.muted, styles.flex]}>Rest between sets</Text>
           <Pressable
-            onLongPress={() => onRemoveSet(i)}
-            accessibilityLabel={`Set ${i + 1}. Long-press to remove`}
-            style={styles.setCol}
-          >
-            <Text style={styles.setNumber}>{i + 1}</Text>
-          </Pressable>
-          <TextInput
-            value={set.weight}
-            onChangeText={(v) => onChange(i, 'weight', v)}
-            placeholder="0"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-            style={[styles.input, styles.inputCol]}
-            accessibilityLabel={`${exercise.name} set ${i + 1} weight`}
-          />
-          <TextInput
-            value={set.reps}
-            onChangeText={(v) => onChange(i, 'reps', v)}
-            placeholder={/\d+/.exec(exercise.targetReps)?.[0] ?? '0'}
-            placeholderTextColor={colors.textMuted}
-            keyboardType="number-pad"
-            style={[styles.input, styles.inputCol]}
-            accessibilityLabel={`${exercise.name} set ${i + 1} reps`}
-          />
-          <Pressable
-            onPress={() => onToggle(i)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: set.done }}
-            accessibilityLabel={`${exercise.name} set ${i + 1} done`}
+            onPress={() => onRestChange(exercise.restSeconds - REST_STEP_SECONDS)}
+            disabled={exercise.restSeconds <= MIN_REST_SECONDS}
+            accessibilityRole="button"
+            accessibilityLabel={`Shorter rest for ${exercise.name}`}
             hitSlop={6}
-            style={[styles.check, styles.checkCol, set.done && styles.checkDone]}
+            style={[styles.restStep, exercise.restSeconds <= MIN_REST_SECONDS && styles.restStepDisabled]}
           >
-            <Ionicons name="checkmark" size={18} color={set.done ? '#fff' : colors.textMuted} />
+            <Ionicons name="remove" size={16} color={colors.text} />
+          </Pressable>
+          <Text style={styles.restValue} accessibilityLabel={`Rest ${formatClock(exercise.restSeconds)}`}>
+            {formatClock(exercise.restSeconds)}
+          </Text>
+          <Pressable
+            onPress={() => onRestChange(exercise.restSeconds + REST_STEP_SECONDS)}
+            disabled={exercise.restSeconds >= MAX_REST_SECONDS}
+            accessibilityRole="button"
+            accessibilityLabel={`Longer rest for ${exercise.name}`}
+            hitSlop={6}
+            style={[styles.restStep, exercise.restSeconds >= MAX_REST_SECONDS && styles.restStepDisabled]}
+          >
+            <Ionicons name="add" size={16} color={colors.text} />
           </Pressable>
         </View>
-      ))}
+      ) : null}
+
+      {exercise.sets.length ? (
+        <View style={styles.setRow}>
+          <Text style={[styles.colLabel, styles.setCol]}>Set</Text>
+          {columns.map((c) => (
+            <Text key={c.field} style={[styles.colLabel, styles.inputCol]}>
+              {c.label}
+            </Text>
+          ))}
+          {fields.time ? <View style={styles.timerCol} /> : null}
+          <View style={styles.checkCol} />
+          <View style={styles.deleteCol} />
+        </View>
+      ) : (
+        <Text style={styles.muted}>No sets — add one below.</Text>
+      )}
+      {exercise.sets.map((set, i) => {
+        const running = Boolean(set.timerStartedAt);
+        return (
+          <View key={i} style={[styles.setRow, set.done && styles.setRowDone]}>
+            <View style={styles.setCol}>
+              <Text style={styles.setNumber}>{i + 1}</Text>
+            </View>
+            {columns.map((c) =>
+              c.field === 'time' && running ? (
+                <View key={c.field} style={[styles.input, styles.inputCol, styles.runningTimer]}>
+                  <Text style={styles.runningTimerText}>{formatClock((now - (set.timerStartedAt ?? now)) / 1000)}</Text>
+                </View>
+              ) : (
+                <TextInput
+                  key={c.field}
+                  value={set[c.field]}
+                  onChangeText={(v) => onChange(i, c.field, v)}
+                  placeholder={placeholders[c.field]}
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType={c.keyboard}
+                  style={[styles.input, styles.inputCol]}
+                  accessibilityLabel={
+                    c.field === 'time'
+                      ? `${exercise.name} set ${i + 1} time, minutes and seconds`
+                      : `${exercise.name} set ${i + 1} ${c.label}`
+                  }
+                />
+              )
+            )}
+            {fields.time ? (
+              <Pressable
+                onPress={() => onTimer(i)}
+                disabled={set.done}
+                accessibilityRole="button"
+                accessibilityLabel={`${running ? 'Stop' : 'Start'} timer for ${exercise.name} set ${i + 1}`}
+                hitSlop={4}
+                style={[styles.timerButton, styles.timerCol, running && styles.timerButtonRunning, set.done && styles.restStepDisabled]}
+              >
+                <Ionicons name={running ? 'stop' : 'play'} size={16} color={running ? '#fff' : colors.primary} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => onToggle(i)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: set.done }}
+              accessibilityLabel={`${exercise.name} set ${i + 1} done`}
+              hitSlop={6}
+              style={[styles.check, styles.checkCol, set.done && styles.checkDone]}
+            >
+              <Ionicons name="checkmark" size={18} color={set.done ? '#fff' : colors.textMuted} />
+            </Pressable>
+            <Pressable
+              onPress={() => onRemoveSet(i)}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove set ${i + 1} of ${exercise.name}`}
+              hitSlop={6}
+              style={[styles.deleteCol, styles.deleteButton]}
+            >
+              <Ionicons name="close" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        );
+      })}
       <Text style={styles.link} onPress={onAddSet} accessibilityRole="button">
         + Add set
       </Text>
@@ -616,7 +783,6 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1 },
   row: { flexDirection: 'row', gap: spacing.sm },
-  dateField: { width: 180 },
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   muted: { color: colors.textMuted, fontSize: 13 },
   eyebrow: { color: colors.primary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -661,7 +827,40 @@ const styles = StyleSheet.create({
   },
   restStepDisabled: { opacity: 0.4 },
   restValue: { color: colors.text, fontSize: 15, fontWeight: '700', minWidth: 44, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  warmupRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4, cursor: 'pointer' },
+  warmupRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: 4 },
+  warmupCheck: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, cursor: 'pointer' },
+  warmupHowTo: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  moveButtons: { flexDirection: 'row', gap: 4 },
+  moveButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  timingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  elapsed: { color: colors.text, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  elapsedLive: { color: colors.primary },
+  timerCol: { width: 36 },
+  timerButton: {
+    height: 40,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  timerButtonRunning: { backgroundColor: colors.danger, borderColor: colors.danger },
+  runningTimer: { justifyContent: 'center', borderColor: colors.primary },
+  runningTimerText: { color: colors.primary, fontSize: 17, fontWeight: '700', textAlign: 'center', fontVariant: ['tabular-nums'] },
+  deleteCol: { width: 24 },
+  deleteButton: { height: 40, alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
+
   warmupText: { color: colors.text, fontSize: 14, flex: 1 },
   struck: { color: colors.textMuted, textDecorationLine: 'line-through' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

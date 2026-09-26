@@ -16,7 +16,7 @@ class UserProfile(Base):
     __table_args__ = (
         # Up to two goals, most important first.
         CheckConstraint(
-            "goals <@ ARRAY['strength','hypertrophy','general_fitness','endurance']::varchar[] "
+            "goals <@ ARRAY['strength','hypertrophy','general_fitness','endurance','weight_loss']::varchar[] "
             "AND cardinality(goals) <= 2",
             name="user_profiles_goals_check",
         ),

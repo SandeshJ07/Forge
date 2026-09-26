@@ -21,7 +21,12 @@ class GeneratedPlan(Base):
     plan: Mapped[dict] = mapped_column(JSONB, nullable=False)
     # Training summary + the preferences (incl. free-text notes) behind this plan; encrypted at rest.
     source_summary: Mapped[dict] = mapped_column(EncryptedJSON, nullable=False, default=dict)
+    # New plans wait for review: the user accepts one (it becomes the current plan,
+    # replacing the previous accepted one) or dismisses it. Plans from history can
+    # be accepted again later.
     accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dismissed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Plans are generated in the background: the row is created as 'generating'
     # (with an empty plan) and flipped to 'ready' or 'failed' when the AI call ends.
     status: Mapped[str] = mapped_column(String, nullable=False, default="ready", server_default="ready")

@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/apiClient';
-import type { GeneratedPlan, PlanGenerationStatus, PlanPreferences, PlanUsage } from '@/types/database';
+import type { GeneratedPlan, PlanGenerationStatus, PlanPayload, PlanPreferences, PlanUsage } from '@/types/database';
 
 /** The daily limit on the shared AI key resets at the user's local midnight. */
 function tzParam(): string {
@@ -31,10 +31,27 @@ export async function fetchPlanHistory(): Promise<GeneratedPlan[]> {
   return apiClient.get<GeneratedPlan[]>('/plans');
 }
 
+/** The current plan: the one the user accepted most recently. */
 export async function fetchLatestPlan(): Promise<GeneratedPlan | null> {
   return apiClient.get<GeneratedPlan | null>('/plans/latest');
 }
 
-export async function setPlanAccepted(planId: string, accepted: boolean): Promise<void> {
-  await apiClient.patch(`/plans/${planId}`, { accepted });
+/** A newly generated plan waiting for review — it never replaces the current plan until accepted. */
+export async function fetchPendingPlan(): Promise<GeneratedPlan | null> {
+  return apiClient.get<GeneratedPlan | null>('/plans/pending');
+}
+
+/** Makes a plan current: a new one after review, or an older one loaded back from history. */
+export async function acceptPlan(planId: string): Promise<GeneratedPlan> {
+  return apiClient.post<GeneratedPlan>(`/plans/${planId}/accept`, {});
+}
+
+/** Keeps the current plan; the dismissed one stays in history. */
+export async function dismissPlan(planId: string): Promise<GeneratedPlan> {
+  return apiClient.post<GeneratedPlan>(`/plans/${planId}/dismiss`, {});
+}
+
+/** Saves the user's own edits to a plan. */
+export async function updatePlanContent(planId: string, plan: PlanPayload): Promise<GeneratedPlan> {
+  return apiClient.put<GeneratedPlan>(`/plans/${planId}/content`, { plan });
 }

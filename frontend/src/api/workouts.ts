@@ -12,7 +12,12 @@ export interface ManualWorkoutInput {
     exerciseName: string;
     weightKg: number | null;
     reps: number | null;
+    durationSeconds?: number | null;
+    distanceMeters?: number | null;
     rpe: number | null;
+    /** ISO times: the first set's start and each set's finish give the exercise's timing. */
+    startedAt?: string | null;
+    endedAt?: string | null;
   }[];
 }
 
@@ -33,7 +38,11 @@ export async function logManualWorkout(input: ManualWorkoutInput): Promise<LogMa
         exercise_name: set.exerciseName,
         weight_kg: set.weightKg,
         reps: set.reps,
+        duration_seconds: set.durationSeconds ?? null,
+        distance_meters: set.distanceMeters ?? null,
         rpe: set.rpe,
+        started_at: set.startedAt ?? null,
+        ended_at: set.endedAt ?? null,
       })),
     }
   );

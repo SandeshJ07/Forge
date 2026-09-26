@@ -32,6 +32,10 @@ PROMPT_EXERCISE_LIMIT = 250
 
 PROMPT_EXERCISE_CATEGORIES = ("strength", "powerlifting", "plyometrics", "olympic weightlifting", "cardio")
 
+# Warm-up candidates: light cardio, mobility and activation drills. Kept short — it's per-generation tokens too.
+PROMPT_WARMUP_LIMIT = 70
+WARMUP_EQUIPMENT = ("body only", "bands", "foam roll", "machine", "other", None)
+
 # Onboarding's equipment choices -> free-exercise-db `equipment` values.
 EQUIPMENT_ACCESS_TO_GLOSSARY = {
     "barbell": ("barbell", "e-z curl bar"),
@@ -146,6 +150,8 @@ def _build_prompt_input(db: Session, user_id: UUID, plan_equipment: list[str] | 
         excluded_names=disliked,
     )
 
+    warmup_exercise_names = _select_warmup_names(db, disliked)
+
     record_rows = (
         db.query(PersonalRecord, Exercise.name)
         .join(Exercise, Exercise.id == PersonalRecord.exercise_id)
@@ -186,6 +192,7 @@ def _build_prompt_input(db: Session, user_id: UUID, plan_equipment: list[str] | 
         liked_exercises=liked,
         disliked_exercises=disliked,
         available_exercise_names=available_exercise_names,
+        warmup_exercise_names=warmup_exercise_names,
         personal_records=personal_records,
     )
 
@@ -231,6 +238,32 @@ def _select_prompt_exercise_names(
     return (first + rest)[:PROMPT_EXERCISE_LIMIT]
 
 
+def _select_warmup_names(db: Session, excluded_names: list[str]) -> list[str]:
+    """Stretches, light cardio and bodyweight/band activation drills the prompt can build warm-ups from."""
+    rows = (
+        db.query(Exercise.name, Exercise.category, Exercise.equipment, Exercise.difficulty)
+        .filter(Exercise.difficulty.is_distinct_from("advanced"))
+        .all()
+    )
+    excluded = {name.lower() for name in excluded_names}
+    cardio, drills = [], []
+    for name, category, equipment, _difficulty in rows:
+        if name.lower() in excluded:
+            continue
+        if category == "cardio":
+            cardio.append(name)
+        elif category == "stretching" or (category == "strength" and equipment in ("bands", "body only")):
+            if equipment in WARMUP_EQUIPMENT:
+                drills.append(name)
+    random.shuffle(drills)
+    return sorted(cardio) + sorted(drills[: max(0, PROMPT_WARMUP_LIMIT - len(cardio))])
+
+
+TRACKING_TYPES = (
+    "weight_reps", "bodyweight_reps", "weighted_bodyweight", "duration", "distance_duration", "weight_distance",
+)
+
+
 def _attach_exercise_ids(db: Session, plan_json: dict) -> None:
     """
     Fills each plan exercise's exercise_id by exact (case-insensitive) name
@@ -242,17 +275,37 @@ def _attach_exercise_ids(db: Session, plan_json: dict) -> None:
     plan_exercises = [
         exercise
         for group in plan_json.get("groups") or []
-        for exercise in group.get("exercises") or []
+        for key in ("warmup", "exercises")
+        for exercise in group.get(key) or []
         if isinstance(exercise, dict)
     ]
     names = {str(e.get("exercise_name", "")).strip().lower() for e in plan_exercises} - {""}
     if not names:
         return
 
-    rows = db.query(Exercise.id, Exercise.name).filter(func.lower(Exercise.name).in_(names)).all()
-    id_by_name = {name.lower(): str(exercise_id) for exercise_id, name in rows}
+    # Also match old dataset names (kept as aliases), in case the model uses one.
+    rows = (
+        db.query(Exercise.id, Exercise.name, Exercise.aliases, Exercise.tracking_type)
+        .filter(
+            func.lower(Exercise.name).in_(names)
+            | func.lower(func.array_to_string(Exercise.aliases, "|")).in_(names)
+        )
+        .all()
+    )
+    by_name: dict[str, tuple[str, str, str]] = {}
+    for exercise_id, name, aliases, tracking_type in rows:
+        for alias in aliases or []:
+            by_name.setdefault(alias.lower(), (str(exercise_id), name, tracking_type))
+        by_name[name.lower()] = (str(exercise_id), name, tracking_type)
     for exercise in plan_exercises:
-        exercise["exercise_id"] = id_by_name.get(str(exercise.get("exercise_name", "")).strip().lower())
+        match = by_name.get(str(exercise.get("exercise_name", "")).strip().lower())
+        exercise["exercise_id"] = match[0] if match else None
+        if match:
+            # Use the glossary's current name, and trust it on how this exercise is logged.
+            exercise["exercise_name"] = match[1]
+            exercise["tracking"] = match[2]
+        elif exercise.get("tracking") not in TRACKING_TYPES:
+            exercise["tracking"] = None
 
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -278,6 +331,15 @@ def _normalize_groups(plan_json: dict) -> None:
         group["exercises"] = [e for e in group.get("exercises") or [] if isinstance(e, dict)]
     plan_json["groups"] = [g for g in groups if g["exercises"]]
     plan_json.pop("days", None)
+
+
+def finalize_plan_json(db: Session, plan_json: dict) -> dict:
+    """Normalises groups and links exercises to the glossary — for AI output and for the user's own edits alike."""
+    _normalize_groups(plan_json)
+    if not plan_json["groups"]:
+        raise PlanParseError("The plan has no exercise groups with exercises. Please try again.")
+    _attach_exercise_ids(db, plan_json)
+    return plan_json
 
 
 def _parse_plan_json(text: str) -> dict:
@@ -312,14 +374,12 @@ async def generate_plan_for_user(db: Session, user_id: UUID, preferences: dict |
     prompt_input.notes = preferences.get("notes")
     prompt = build_plan_prompt(prompt_input)
 
-    text, model_used = await generate_text(provider, api_key, prompt, max_tokens=2500)
+    # Plans now carry how-to cues, intensity and full warm-ups per group, so allow a longer answer.
+    text, model_used = await generate_text(provider, api_key, prompt, max_tokens=8000)
     plan_json = _parse_plan_json(text)
     if not isinstance(plan_json, dict):
         raise PlanParseError("Failed to parse plan JSON from the AI response")
-    _normalize_groups(plan_json)
-    if not plan_json["groups"]:
-        raise PlanParseError("The AI returned no exercise groups. Please try again.")
-    _attach_exercise_ids(db, plan_json)
+    plan_json = finalize_plan_json(db, plan_json)
 
     source_summary = {
         "total_workouts_last_28_days": prompt_input.recent_workout_summary.total_workouts_last_28_days,
