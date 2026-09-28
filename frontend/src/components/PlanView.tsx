@@ -60,7 +60,7 @@ export function PlanView({ plan, onStartGroup, startLabel, onChange }: PlanViewP
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{plan.title}</Text>
-      <Text style={styles.rationale}>{plan.rationale}</Text>
+      {plan.rationale ? <Text style={styles.rationale}>{plan.rationale}</Text> : null}
       {plan.progression ? (
         <View style={styles.progression}>
           <Ionicons name="trending-up" size={16} color={colors.primary} />

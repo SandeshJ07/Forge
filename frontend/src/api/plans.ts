@@ -1,5 +1,12 @@
 import { apiClient } from '@/lib/apiClient';
-import type { GeneratedPlan, PlanGenerationStatus, PlanPayload, PlanPreferences, PlanUsage } from '@/types/database';
+import type {
+  CustomPlanInput,
+  GeneratedPlan,
+  PlanGenerationStatus,
+  PlanPayload,
+  PlanPreferences,
+  PlanUsage,
+} from '@/types/database';
 
 /** The daily limit on the shared AI key resets at the user's local midnight. */
 function tzParam(): string {
@@ -17,6 +24,11 @@ function tzParam(): string {
  */
 export async function generatePlan(preferences: PlanPreferences = {}): Promise<GeneratedPlan> {
   return apiClient.post<GeneratedPlan>(`/plans/generate?tz=${tzParam()}`, { preferences });
+}
+
+/** Saves a plan the user built by hand — no AI call, no daily limit. It becomes the current plan. */
+export async function createCustomPlan(input: CustomPlanInput): Promise<GeneratedPlan> {
+  return apiClient.post<GeneratedPlan>('/plans/custom', input);
 }
 
 export async function fetchPlanUsage(): Promise<PlanUsage> {

@@ -48,6 +48,8 @@ export interface RestTimer {
   totalSeconds: number;
   nextLabel: string;
   chimed: boolean;
+  /** Set while the workout is paused: the countdown is frozen at this many ms. */
+  pausedRemainingMs?: number | null;
 }
 
 export interface SessionWarmup {
@@ -76,6 +78,12 @@ export interface WorkoutSession {
   rest: RestTimer | null;
   /** Last time a set was ticked off — helps estimate when the next exercise started. */
   lastDoneAt?: number;
+  /** When the current pause began (epoch ms); null/absent while the clock runs. */
+  pausedAt?: number | null;
+  /** Total time spent paused before the current pause — left out of the duration. */
+  pausedMs?: number;
+  /** Finished pauses as [start, end] epoch ms, to take them out of the saved duration. */
+  pauses?: [number, number][];
 }
 
 export interface NewExercise {
@@ -112,12 +120,41 @@ interface SessionState {
   adjustRest: (deltaSeconds: number) => void;
   skipRest: () => void;
   markChimed: () => void;
+  /** Stops the workout clock, freezes the rest countdown and holds any running set stopwatch. */
+  pause: () => void;
+  resume: () => void;
   end: () => void;
 }
 
 function emptySession(): WorkoutSession {
   const now = Date.now();
   return { title: DEFAULT_TITLE, date: now, startedAt: now, loadedGroups: [], warmup: [], exercises: [], rest: null };
+}
+
+/**
+ * The session with its pause ended: paused time banked, and the rest countdown
+ * and any running set stopwatch carried on from where they stopped.
+ */
+function resumed(s: WorkoutSession, now = Date.now()): WorkoutSession {
+  if (s.pausedAt == null) return s;
+  const pausedFor = Math.max(0, now - s.pausedAt);
+  const rest =
+    s.rest && s.rest.pausedRemainingMs != null
+      ? { ...s.rest, endsAt: now + s.rest.pausedRemainingMs, pausedRemainingMs: null }
+      : s.rest;
+  const exercises = s.exercises.map((ex) =>
+    ex.sets.some((st) => st.timerStartedAt)
+      ? { ...ex, sets: ex.sets.map((st) => (st.timerStartedAt ? { ...st, timerStartedAt: st.timerStartedAt + pausedFor } : st)) }
+      : ex
+  );
+  return {
+    ...s,
+    pausedAt: null,
+    pausedMs: (s.pausedMs ?? 0) + pausedFor,
+    pauses: [...(s.pauses ?? []), [s.pausedAt, now]],
+    rest,
+    exercises,
+  };
 }
 
 function emptySet(weight = ''): SessionSet {
@@ -248,7 +285,9 @@ export const useWorkoutSessionStore = create<SessionState>()(
             sets: ex.sets.map((st, i) => (i === setIndex ? { ...st, [field]: value } : st)),
           })),
 
-        toggleSetTimer: (exerciseKey, setIndex) =>
+        toggleSetTimer: (exerciseKey, setIndex) => {
+          // Using a stopwatch means training has started again.
+          if (get().session?.pausedAt != null) get().resume();
           updateExercise(exerciseKey, (ex) => {
             const now = Date.now();
             const target = ex.sets[setIndex];
@@ -261,11 +300,14 @@ export const useWorkoutSessionStore = create<SessionState>()(
               return { ...st, timerStartedAt: now };
             });
             return { ...ex, startedAt: ex.startedAt ?? now, sets };
-          }),
+          });
+        },
 
         toggleSetDone: (exerciseKey, setIndex) => {
-          const session = get().session;
-          if (!session) return;
+          const current = get().session;
+          if (!current) return;
+          // Ticking a set means training has started again.
+          const session = resumed(current);
           const exIndex = session.exercises.findIndex((e) => e.key === exerciseKey);
           if (exIndex === -1 || !session.exercises[exIndex].sets[setIndex]) return;
           const now = Date.now();
@@ -340,12 +382,14 @@ export const useWorkoutSessionStore = create<SessionState>()(
           set((state) => {
             const rest = state.session?.rest;
             if (!state.session || !rest) return state;
+            const frozen = rest.pausedRemainingMs != null;
             return {
               session: {
                 ...state.session,
                 rest: {
                   ...rest,
                   endsAt: Math.max(Date.now(), rest.endsAt + deltaSeconds * 1000),
+                  pausedRemainingMs: frozen ? Math.max(0, (rest.pausedRemainingMs ?? 0) + deltaSeconds * 1000) : null,
                   totalSeconds: Math.max(rest.totalSeconds + deltaSeconds, 1),
                   chimed: false,
                 },
@@ -367,6 +411,17 @@ export const useWorkoutSessionStore = create<SessionState>()(
           set((state) => ({
             session: state.session?.rest ? { ...state.session, rest: { ...state.session.rest, chimed: true } } : state.session,
           })),
+
+        pause: () =>
+          set((state) => {
+            const s = state.session;
+            if (!s || s.pausedAt != null) return state;
+            const now = Date.now();
+            const rest = s.rest ? { ...s.rest, pausedRemainingMs: Math.max(0, s.rest.endsAt - now) } : null;
+            return { session: { ...s, pausedAt: now, rest } };
+          }),
+
+        resume: () => set((state) => ({ session: state.session && resumed(state.session) })),
 
         end: () => set({ session: null }),
       };
@@ -394,6 +449,28 @@ export const useWorkoutSessionStore = create<SessionState>()(
     }
   )
 );
+
+export function isPaused(session: WorkoutSession | null): boolean {
+  return session?.pausedAt != null;
+}
+
+/** Seconds of actual training so far — paused time left out. */
+export function elapsedSeconds(session: WorkoutSession, now: number): number {
+  const until = session.pausedAt ?? now;
+  return Math.max(0, (until - session.startedAt - (session.pausedMs ?? 0)) / 1000);
+}
+
+/** Seconds left on the rest timer (frozen while paused; negative once it's run out). */
+export function restRemainingSeconds(rest: RestTimer, now: number): number {
+  return (rest.pausedRemainingMs ?? rest.endsAt - now) / 1000;
+}
+
+/** Milliseconds of the session's pauses (including one still running) that fall between start and end. */
+export function pausedWithin(session: WorkoutSession, start: number, end: number): number {
+  const all: [number, number][] = [...(session.pauses ?? [])];
+  if (session.pausedAt != null) all.push([session.pausedAt, Date.now()]);
+  return all.reduce((sum, [a, b]) => sum + Math.max(0, Math.min(b, end) - Math.max(a, start)), 0);
+}
 
 /** Does the session have anything worth resuming? (An untouched draft doesn't count.) */
 export function hasWorkoutInProgress(session: WorkoutSession | null): boolean {

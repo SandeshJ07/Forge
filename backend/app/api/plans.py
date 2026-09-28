@@ -12,6 +12,7 @@ from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.user import User
 from app.schemas.plan import (
+    CustomPlanRequest,
     GeneratePlanRequest,
     GeneratedPlanResponse,
     PlanGenerationStatus,
@@ -171,6 +172,40 @@ async def generate_plan(
     db.commit()
     db.refresh(plan)
     background_tasks.add_task(_run_generation, plan.id, current_user.id, preferences)
+    return plan
+
+
+@router.post("/custom", response_model=GeneratedPlanResponse, status_code=status.HTTP_201_CREATED)
+def create_custom_plan(
+    body: CustomPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GeneratedPlan:
+    """
+    Saves a plan the user built by hand and makes it the current plan (it's
+    their own work, so there's nothing to review). Same shape as an AI plan;
+    no AI call, so it doesn't count toward the daily limit.
+    """
+    plan_json = {"title": body.title, "rationale": "", **body.model_dump(include={"groups"}, exclude_none=True)}
+    try:
+        plan_json = finalize_plan_json(db, plan_json)
+    except PlanParseError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    db.query(GeneratedPlan).filter(
+        GeneratedPlan.user_id == current_user.id, GeneratedPlan.accepted.is_(True)
+    ).update({GeneratedPlan.accepted: False}, synchronize_session=False)
+    plan = GeneratedPlan(
+        user_id=current_user.id,
+        plan=plan_json,
+        source_summary={"source": "manual"},
+        accepted=True,
+        accepted_at=datetime.now(timezone.utc),
+        status="ready",
+        used_shared_key=False,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
     return plan
 
 

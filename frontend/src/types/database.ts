@@ -273,3 +273,15 @@ export interface PlanPayload {
   groups?: PlanGroup[];
   days?: LegacyPlanDay[];
 }
+
+/** POST /plans/custom — a plan built by hand, no AI. Exercise ids are matched by name on the server. */
+export interface CustomPlanInput {
+  title: string;
+  groups: {
+    name: string;
+    focus: string;
+    weekdays: Weekday[];
+    warmup: { exercise_name: string; duration_or_reps: string }[];
+    exercises: { exercise_name: string; sets: number; reps: string; rest_seconds: number; notes?: string }[];
+  }[];
+}

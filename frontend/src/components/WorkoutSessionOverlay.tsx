@@ -3,7 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { hasWorkoutInProgress, useWorkoutSessionStore } from '@/stores/useWorkoutSessionStore';
+import {
+  elapsedSeconds,
+  hasWorkoutInProgress,
+  isPaused,
+  restRemainingSeconds,
+  useWorkoutSessionStore,
+} from '@/stores/useWorkoutSessionStore';
 import { playRestChime } from '@/lib/restChime';
 import { useIsDesktopWeb } from '@/hooks/useResponsive';
 import { colors, radii, spacing } from '@/constants/theme';
@@ -41,7 +47,8 @@ export function WorkoutSessionOverlay() {
   const now = useNow(session ? 500 : 60_000);
 
   const rest = session?.rest ?? null;
-  const restRemaining = rest ? (rest.endsAt - now) / 1000 : 0;
+  // Frozen while paused, so the chime can't fire during a pause.
+  const restRemaining = rest ? restRemainingSeconds(rest, now) : 0;
 
   useEffect(() => {
     if (rest && !rest.chimed && restRemaining <= 0) {
@@ -52,6 +59,7 @@ export function WorkoutSessionOverlay() {
 
   if (!session || !hasWorkoutInProgress(session) || pathname.startsWith('/workout/new')) return null;
 
+  const paused = isPaused(session);
   const position = isDesktopWeb
     ? { top: spacing.lg, right: spacing.xl }
     : { top: insets.top + spacing.sm, left: spacing.md, right: spacing.md };
@@ -60,17 +68,17 @@ export function WorkoutSessionOverlay() {
     <Pressable
       onPress={() => router.push('/workout/new')}
       accessibilityRole="button"
-      accessibilityLabel="Workout in progress. Resume"
+      accessibilityLabel={paused ? 'Workout paused. Open it' : 'Workout in progress. Open it'}
       style={[styles.pill, position]}
     >
-      <View style={styles.dot} />
+      <View style={[styles.dot, paused && styles.dotPaused]} />
       <View style={styles.text}>
         <Text style={styles.title} numberOfLines={1}>
           {session.title}
         </Text>
         <Text style={styles.meta}>
-          {formatClock((now - session.startedAt) / 1000)}
-          {rest ? (restRemaining > 0 ? ` · Rest ${formatClock(restRemaining)}` : ' · Rest over — go!') : ''}
+          {formatClock(elapsedSeconds(session, now))}
+          {paused ? ' · Paused' : rest ? (restRemaining > 0 ? ` · Rest ${formatClock(restRemaining)}` : ' · Rest over — go!') : ''}
         </Text>
       </View>
       <Text style={styles.resume}>Resume</Text>
@@ -105,6 +113,9 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.success,
+  },
+  dotPaused: {
+    backgroundColor: colors.warning,
   },
   text: {
     flex: 1,

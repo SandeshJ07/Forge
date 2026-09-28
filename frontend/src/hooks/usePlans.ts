@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   acceptPlan,
+  createCustomPlan,
   dismissPlan,
   fetchGenerationStatus,
   fetchLatestPlan,
@@ -11,7 +12,7 @@ import {
   generatePlan,
   updatePlanContent,
 } from '@/api/plans';
-import type { PlanPayload, PlanPreferences } from '@/types/database';
+import type { CustomPlanInput, PlanPayload, PlanPreferences } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 const POLL_MS = 3000;
@@ -144,6 +145,16 @@ export function useUpdatePlanContent() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ planId, plan }: { planId: string; plan: PlanPayload }) => updatePlanContent(planId, plan),
+    onSuccess: () => invalidatePlans(queryClient, userId),
+  });
+}
+
+/** Saves a hand-built plan; it becomes the current plan straight away. */
+export function useCreateCustomPlan() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CustomPlanInput) => createCustomPlan(input),
     onSuccess: () => invalidatePlans(queryClient, userId),
   });
 }

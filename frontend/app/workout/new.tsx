@@ -20,7 +20,11 @@ import { useUnitStore } from '@/stores/useUnitStore';
 import {
   MAX_REST_SECONDS,
   MIN_REST_SECONDS,
+  elapsedSeconds,
   exerciseEndTime,
+  isPaused,
+  pausedWithin,
+  restRemainingSeconds,
   useWorkoutSessionStore,
   type SessionExercise,
   type SetField,
@@ -115,11 +119,12 @@ export default function LogWorkoutScreen() {
 
   const date = session?.date ?? now;
   const loggingToday = isSameDay(date, now);
-  const elapsed = session && exercises.length ? (now - session.startedAt) / 1000 : 0;
+  const elapsed = session && exercises.length ? elapsedSeconds(session, now) : 0;
+  const paused = isPaused(session);
   const totalSets = exercises.reduce((n, e) => n + e.sets.length, 0);
   const doneSets = exercises.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
   const rest = session?.rest ?? null;
-  const restRemaining = rest ? (rest.endsAt - now) / 1000 : 0;
+  const restRemaining = rest ? restRemainingSeconds(rest, now) : 0;
 
   function addFromSearch(exercise: Exercise) {
     const timed = TRACKING_FIELDS[exercise.tracking_type].time;
@@ -174,10 +179,13 @@ export default function LogWorkoutScreen() {
     const plausible = (seconds: number) => seconds > 0 && seconds <= 24 * 3600;
     // From the exercises' own recorded times when there are any;
     // otherwise, for a live session, from when logging began.
+    // Paused time never counts.
+    const spanStart = spans.length ? Math.min(...spans.map((s) => s.start)) : 0;
+    const spanEnd = spans.length ? Math.max(...spans.map((s) => s.end)) : 0;
     const fromExercises = spans.length
-      ? Math.round((Math.max(...spans.map((s) => s.end)) - Math.min(...spans.map((s) => s.start))) / 1000)
+      ? Math.round((spanEnd - spanStart - (loggingToday ? pausedWithin(session, spanStart, spanEnd) : 0)) / 1000)
       : 0;
-    const live = loggingToday ? Math.round((Date.now() - session.startedAt) / 1000) : 0;
+    const live = loggingToday ? Math.round(elapsedSeconds(session, Date.now())) : 0;
     const duration = plausible(fromExercises) ? fromExercises : plausible(live) ? live : null;
     try {
       const result = await logWorkout.mutateAsync({
@@ -253,9 +261,21 @@ export default function LogWorkoutScreen() {
             <Text style={styles.muted}>
               {doneSets} of {totalSets} sets done
             </Text>
-            <View style={styles.clock} accessibilityLabel={`Elapsed ${formatClock(elapsed)}`}>
-              <Ionicons name="time-outline" size={15} color={colors.textMuted} />
-              <Text style={styles.clockText}>{formatClock(elapsed)}</Text>
+            <View style={styles.clockGroup}>
+              <View style={styles.clock} accessibilityLabel={`Elapsed ${formatClock(elapsed)}${paused ? ', paused' : ''}`}>
+                <Ionicons name="time-outline" size={15} color={paused ? colors.warning : colors.textMuted} />
+                <Text style={[styles.clockText, paused && styles.clockPaused]}>{formatClock(elapsed)}</Text>
+              </View>
+              <Pressable
+                onPress={paused ? store.resume : store.pause}
+                accessibilityRole="button"
+                accessibilityLabel={paused ? 'Resume workout' : 'Pause workout'}
+                hitSlop={6}
+                style={({ pressed }) => [styles.pauseButton, paused && styles.pauseButtonActive, pressed && styles.pressed]}
+              >
+                <Ionicons name={paused ? 'play' : 'pause'} size={14} color={colors.text} />
+                <Text style={styles.pauseText}>{paused ? 'Resume' : 'Pause'}</Text>
+              </Pressable>
             </View>
           </View>
         ) : null}
@@ -336,7 +356,8 @@ export default function LogWorkoutScreen() {
           <ExerciseCard
             key={ex.key}
             exercise={ex}
-            now={now}
+            // Frozen while paused, so live exercise clocks and set stopwatches hold still.
+            now={session?.pausedAt ?? now}
             unitSystem={unitSystem}
             weightUnit={weightUnit}
             onMove={(delta) => store.moveExercise(ex.key, delta)}
@@ -433,7 +454,7 @@ export default function LogWorkoutScreen() {
         >
           <View style={styles.restTop}>
             <View style={styles.flex}>
-              <Text style={styles.restLabel}>{restRemaining > 0 ? 'Rest' : 'Rest over — go!'}</Text>
+              <Text style={styles.restLabel}>{paused ? 'Rest · paused' : restRemaining > 0 ? 'Rest' : 'Rest over — go!'}</Text>
               <Text style={styles.muted} numberOfLines={1}>
                 {rest.nextLabel}
               </Text>
@@ -446,7 +467,11 @@ export default function LogWorkoutScreen() {
           <View style={styles.restActions}>
             <RestButton label="−15s" onPress={() => store.adjustRest(-15)} />
             <RestButton label="+15s" onPress={() => store.adjustRest(15)} />
-            <RestButton label={restRemaining > 0 ? 'Skip rest' : 'Dismiss'} onPress={store.skipRest} primary />
+            {paused ? (
+              <RestButton label="Resume" onPress={store.resume} primary />
+            ) : (
+              <RestButton label={restRemaining > 0 ? 'Skip rest' : 'Dismiss'} onPress={store.skipRest} primary />
+            )}
           </View>
         </View>
       ) : null}
@@ -797,6 +822,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   clockText: { color: colors.text, fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  clockPaused: { color: colors.warning },
+  clockGroup: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  pauseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    cursor: 'pointer',
+  },
+  pauseButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pauseText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   card: { gap: spacing.sm },
   cardDone: { borderColor: 'rgba(61,220,132,0.4)' },
   cardTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },

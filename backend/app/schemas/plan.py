@@ -98,3 +98,72 @@ class UpdatePlanContentRequest(BaseModel):
     """The whole edited plan (same shape the AI returns); normalised server-side before saving."""
 
     plan: dict[str, Any]
+
+
+class CustomPlanExercise(BaseModel):
+    # Matched to the exercise library by name on save; anything unmatched is kept as free text.
+    exercise_name: str = Field(min_length=1, max_length=120)
+    sets: int = Field(ge=1, le=20)
+    reps: str = Field(min_length=1, max_length=20)  # "8-10", "AMRAP", "30s"
+    rest_seconds: int = Field(ge=0, le=900)
+    notes: str | None = Field(default=None, max_length=300)
+
+    @field_validator("exercise_name", "reps")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def _blank_notes_to_none(cls, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+
+class CustomPlanWarmup(BaseModel):
+    exercise_name: str = Field(min_length=1, max_length=120)
+    duration_or_reps: str = Field(default="", max_length=40)
+
+
+class CustomPlanGroup(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    focus: str = Field(default="", max_length=120)
+    weekdays: list[Weekday] = Field(default_factory=list, max_length=7)
+    warmup: list[CustomPlanWarmup] = Field(default_factory=list, max_length=15)
+    exercises: list[CustomPlanExercise] = Field(min_length=1, max_length=30)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+
+class CustomPlanRequest(BaseModel):
+    """A plan the user builds by hand — no AI involved, so no daily limit."""
+
+    title: str = Field(min_length=1, max_length=80)
+    groups: list[CustomPlanGroup] = Field(min_length=1, max_length=14)
+
+    @field_validator("title")
+    @classmethod
+    def _strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("groups")
+    @classmethod
+    def _one_group_per_weekday(cls, groups: list[CustomPlanGroup]) -> list[CustomPlanGroup]:
+        seen: set[str] = set()
+        for group in groups:
+            clash = seen.intersection(group.weekdays)
+            if clash:
+                raise ValueError("each weekday can belong to one group only")
+            seen.update(group.weekdays)
+        return groups
