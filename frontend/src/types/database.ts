@@ -285,3 +285,63 @@ export interface CustomPlanInput {
     exercises: { exercise_name: string; sets: number; reps: string; rest_seconds: number; notes?: string }[];
   }[];
 }
+
+// --- Diet plans (need the user's own AI key; see backend/app/api/diet.py) ---
+
+export type DietType = 'vegetarian' | 'non_vegetarian' | 'vegan';
+export type DietBudget = 'low' | 'moderate' | 'flexible';
+export type CookingTime = 'minimal' | 'moderate' | 'plenty';
+
+export interface DietPreferences {
+  diet_type: DietType;
+  meals_per_day: number;
+  /** Always kilograms; the form converts from pounds for imperial users. */
+  target_weight_kg?: number;
+  budget?: DietBudget;
+  cooking_time?: CookingTime;
+  notes?: string;
+}
+
+export interface DietMeal {
+  name: string;
+  time: string | null;
+  items: string[];
+  calories: number | null;
+  protein_g: number | null;
+  prep_minutes: number | null;
+  notes: string | null;
+}
+
+export interface DietPlanContent {
+  title: string;
+  summary: string;
+  assumptions: string[];
+  daily_targets: { calories: number | null; protein_g: number | null; carbs_g: number | null; fat_g: number | null };
+  timeline: string | null;
+  days: { day: string; meals: DietMeal[] }[];
+  shopping_list: string[];
+  tips: string[];
+}
+
+export interface DietPlan {
+  id: string;
+  created_at: string;
+  status: 'generating' | 'ready' | 'failed';
+  error: string | null;
+  /** Empty object until status is 'ready'. */
+  plan: DietPlanContent;
+  preferences: Partial<DietPreferences>;
+  provider: AIProvider | null;
+}
+
+export interface DietGenerationStatus {
+  status: 'idle' | 'generating' | 'ready' | 'failed';
+  plan_id: string | null;
+  error: string | null;
+  started_at: string | null;
+}
+
+export interface DietAccess {
+  available: boolean;
+  provider: AIProvider | null;
+}

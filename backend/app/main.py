@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai_keys, auth, exercises, measurements, personal_records, plans, profile, stats, workouts
+from app.api import ai_keys, auth, diet, exercises, measurements, personal_records, plans, profile, stats, workouts
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -28,6 +28,7 @@ app.include_router(measurements.router)
 app.include_router(personal_records.router)
 app.include_router(ai_keys.router)
 app.include_router(plans.router)
+app.include_router(diet.router)
 app.include_router(stats.router)
 
 

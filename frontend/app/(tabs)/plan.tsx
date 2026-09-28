@@ -190,6 +190,14 @@ export default function ExerciseGroupsScreen() {
           </View>
         </>
       ) : null}
+      <View style={styles.dietEntry}>
+        <PlanOption
+          icon="nutrition-outline"
+          title="Diet plan"
+          subtitle="Meals built around your goals, diet and budget. Uses your own AI key."
+          onPress={() => router.push('/diet')}
+        />
+      </View>
     </ScreenContainer>
   );
 }
@@ -245,6 +253,9 @@ function PlanOption({
 }
 
 const styles = StyleSheet.create({
+  dietEntry: {
+    marginTop: spacing.sm,
+  },
   chooserCard: {
     gap: spacing.sm,
     borderColor: colors.primaryMuted,

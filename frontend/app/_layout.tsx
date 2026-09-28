@@ -103,6 +103,14 @@ function RootNavigation() {
             options={{ headerShown: true, title: 'New plan', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
           />
           <Stack.Screen
+            name="diet/index"
+            options={{ headerShown: true, title: 'Diet plan', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
+          />
+          <Stack.Screen
+            name="diet/new"
+            options={{ headerShown: true, title: 'New diet plan', headerLeft: () => <HeaderBackButton fallback="/diet" /> }}
+          />
+          <Stack.Screen
             name="plan/custom"
             options={{ headerShown: true, title: 'Build your plan', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
           />

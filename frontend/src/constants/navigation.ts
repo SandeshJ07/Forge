@@ -17,7 +17,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { name: 'index', title: 'Home', href: '/', icon: 'home-outline', iconActive: 'home', matches: ['/records'] },
   { name: 'log', title: 'Log', href: '/log', icon: 'barbell-outline', iconActive: 'barbell', matches: ['/workout'] },
-  { name: 'plan', title: 'Plan', href: '/plan', icon: 'calendar-outline', iconActive: 'calendar' },
+  { name: 'plan', title: 'Plan', href: '/plan', icon: 'calendar-outline', iconActive: 'calendar', matches: ['/diet'] },
   {
     name: 'measurements',
     title: 'Progress',

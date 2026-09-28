@@ -1,3 +1,4 @@
+from app.models.diet_plan import DietPlan
 from app.models.email_code import EmailCode
 from app.models.exercise import Exercise, UserExerciseFeedback
 from app.models.integration_token import IntegrationToken
@@ -9,6 +10,7 @@ from app.models.user import User
 from app.models.workout import Workout, WorkoutSet
 
 __all__ = [
+    "DietPlan",
     "EmailCode",
     "Exercise",
     "UserExerciseFeedback",
