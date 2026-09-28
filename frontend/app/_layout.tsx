@@ -9,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { queryClient } from '@/lib/queryClient';
+import { restoreQueryCache, startPersistingQueryCache } from '@/lib/queryPersistence';
 // Side-effect import: captures the browser's one-time install prompt at startup.
 import '@/lib/pwaInstall';
 
@@ -141,12 +142,22 @@ function RootNavigation() {
 }
 
 export default function RootLayout() {
+  // Last-known Home / Plan / profile data from the device, restored before any screen mounts
+  // so a cold start (or a sleeping backend) shows it at once while fresh data loads.
+  const [cacheRestored, setCacheRestored] = useState(false);
+  useEffect(() => {
+    restoreQueryCache().finally(() => {
+      startPersistingQueryCache();
+      setCacheRestored(true);
+    });
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
-          <RootNavigation />
+          {cacheRestored ? <RootNavigation /> : null}
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
