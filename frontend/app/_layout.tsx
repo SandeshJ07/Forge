@@ -103,6 +103,10 @@ function RootNavigation() {
             options={{ headerShown: true, title: 'New plan', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
           />
           <Stack.Screen
+            name="plan/custom"
+            options={{ headerShown: true, title: 'Build your plan', headerLeft: () => <HeaderBackButton fallback="/plan" /> }}
+          />
+          <Stack.Screen
             name="records"
             options={{ headerShown: true, title: 'Personal records', headerLeft: () => <HeaderBackButton fallback="/" /> }}
           />

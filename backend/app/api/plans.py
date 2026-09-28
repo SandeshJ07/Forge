@@ -12,6 +12,7 @@ from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.user import User
 from app.schemas.plan import (
+    CustomPlanRequest,
     GeneratePlanRequest,
     GeneratedPlanResponse,
     PlanGenerationStatus,
@@ -23,6 +24,7 @@ from app.services.ai_providers import PROVIDER_NAMES
 from app.services.plan_generation import (
     NoAIKeyAvailable,
     PlanParseError,
+    attach_exercise_ids,
     generate_plan_for_user,
     local_day_start,
     next_local_midnight,
@@ -170,6 +172,33 @@ async def generate_plan(
     db.commit()
     db.refresh(plan)
     background_tasks.add_task(_run_generation, plan.id, current_user.id, preferences)
+    return plan
+
+
+@router.post("/custom", response_model=GeneratedPlanResponse, status_code=status.HTTP_201_CREATED)
+def create_custom_plan(
+    body: CustomPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GeneratedPlan:
+    """
+    Saves a plan the user built by hand. Same shape as an AI plan, so it shows
+    up everywhere a generated one does (Plan tab, Log workout, past plans) and
+    becomes the current plan. No AI call, so it doesn't count toward the daily limit.
+    """
+    plan_json = {"title": body.title, "rationale": "", **body.model_dump(include={"groups"}, exclude_none=True)}
+    attach_exercise_ids(db, plan_json)
+    plan = GeneratedPlan(
+        user_id=current_user.id,
+        plan=plan_json,
+        source_summary={"source": "manual"},
+        accepted=True,
+        status="ready",
+        used_shared_key=False,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
     return plan
 
 

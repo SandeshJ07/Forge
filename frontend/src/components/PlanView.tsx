@@ -22,7 +22,7 @@ export function PlanView({ plan, onStartGroup, startLabel }: PlanViewProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{plan.title}</Text>
-      <Text style={styles.rationale}>{plan.rationale}</Text>
+      {plan.rationale ? <Text style={styles.rationale}>{plan.rationale}</Text> : null}
 
       {planGroups(plan).map((day, index) => (
         <View key={index} style={styles.dayCard}>

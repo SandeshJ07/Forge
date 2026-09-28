@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createCustomPlan,
   fetchGenerationStatus,
   fetchLatestPlan,
   fetchPlanHistory,
@@ -8,7 +9,7 @@ import {
   generatePlan,
   setPlanAccepted,
 } from '@/api/plans';
-import type { PlanPreferences } from '@/types/database';
+import type { CustomPlanInput, PlanPreferences } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 const POLL_MS = 3000;
@@ -107,6 +108,21 @@ export function useSetPlanAccepted() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['latest-plan', userId] });
       queryClient.invalidateQueries({ queryKey: ['plan-history', userId] });
+    },
+  });
+}
+
+/** Saves a hand-built plan; it becomes the latest plan straight away. */
+export function useCreateCustomPlan() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CustomPlanInput) => createCustomPlan(input),
+    onSuccess: (plan) => {
+      queryClient.setQueryData(['latest-plan', userId], plan);
+      queryClient.invalidateQueries({ queryKey: ['latest-plan', userId] });
+      queryClient.invalidateQueries({ queryKey: ['plan-history', userId] });
+      queryClient.invalidateQueries({ queryKey: ['plan-generation', userId] });
     },
   });
 }

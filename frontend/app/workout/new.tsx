@@ -19,6 +19,9 @@ import { useUnitStore } from '@/stores/useUnitStore';
 import {
   MAX_REST_SECONDS,
   MIN_REST_SECONDS,
+  elapsedSeconds,
+  isPaused,
+  restRemainingSeconds,
   useWorkoutSessionStore,
   type SessionExercise,
 } from '@/stores/useWorkoutSessionStore';
@@ -91,11 +94,12 @@ export default function LogWorkoutScreen() {
 
   const date = session?.date ?? now;
   const loggingToday = isSameDay(date, now);
-  const elapsed = session && exercises.length ? (now - session.startedAt) / 1000 : 0;
+  const elapsed = session && exercises.length ? elapsedSeconds(session, now) : 0;
+  const paused = isPaused(session);
   const totalSets = exercises.reduce((n, e) => n + e.sets.length, 0);
   const doneSets = exercises.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
   const rest = session?.rest ?? null;
-  const restRemaining = rest ? (rest.endsAt - now) / 1000 : 0;
+  const restRemaining = rest ? restRemainingSeconds(rest, now) : 0;
 
   function addFromSearch(exerciseId: string, name: string) {
     store.addExercise({ exerciseId, name, sets: 3 });
@@ -133,7 +137,8 @@ export default function LogWorkoutScreen() {
     }
     // Live sessions keep their real start time and duration; back-dated ones land at local noon.
     const workoutDate = loggingToday ? new Date(session.startedAt) : new Date(new Date(session.date).setHours(12, 0, 0, 0));
-    const duration = loggingToday ? Math.round((Date.now() - session.startedAt) / 1000) : null;
+    // Paused time isn't counted.
+    const duration = loggingToday ? Math.round(elapsedSeconds(session, Date.now())) : null;
     try {
       const result = await logWorkout.mutateAsync({
         title: session.title.trim() || 'Workout',
@@ -207,9 +212,21 @@ export default function LogWorkoutScreen() {
             <Text style={styles.muted}>
               {doneSets} of {totalSets} sets done
             </Text>
-            <View style={styles.clock} accessibilityLabel={`Elapsed ${formatClock(elapsed)}`}>
-              <Ionicons name="time-outline" size={15} color={colors.textMuted} />
-              <Text style={styles.clockText}>{formatClock(elapsed)}</Text>
+            <View style={styles.clockGroup}>
+              <View style={styles.clock} accessibilityLabel={`Elapsed ${formatClock(elapsed)}${paused ? ', paused' : ''}`}>
+                <Ionicons name="time-outline" size={15} color={paused ? colors.warning : colors.textMuted} />
+                <Text style={[styles.clockText, paused && styles.clockPaused]}>{formatClock(elapsed)}</Text>
+              </View>
+              <Pressable
+                onPress={paused ? store.resume : store.pause}
+                accessibilityRole="button"
+                accessibilityLabel={paused ? 'Resume workout' : 'Pause workout'}
+                hitSlop={6}
+                style={({ pressed }) => [styles.pauseButton, paused && styles.pauseButtonActive, pressed && styles.pressed]}
+              >
+                <Ionicons name={paused ? 'play' : 'pause'} size={14} color={colors.text} />
+                <Text style={[styles.pauseText, paused && styles.pauseTextActive]}>{paused ? 'Resume' : 'Pause'}</Text>
+              </Pressable>
             </View>
           </View>
         ) : null}
@@ -365,7 +382,7 @@ export default function LogWorkoutScreen() {
         >
           <View style={styles.restTop}>
             <View style={styles.flex}>
-              <Text style={styles.restLabel}>{restRemaining > 0 ? 'Rest' : 'Rest over — go!'}</Text>
+              <Text style={styles.restLabel}>{paused ? 'Rest · paused' : restRemaining > 0 ? 'Rest' : 'Rest over — go!'}</Text>
               <Text style={styles.muted} numberOfLines={1}>
                 {rest.nextLabel}
               </Text>
@@ -378,7 +395,11 @@ export default function LogWorkoutScreen() {
           <View style={styles.restActions}>
             <RestButton label="−15s" onPress={() => store.adjustRest(-15)} />
             <RestButton label="+15s" onPress={() => store.adjustRest(15)} />
-            <RestButton label={restRemaining > 0 ? 'Skip rest' : 'Dismiss'} onPress={store.skipRest} primary />
+            {paused ? (
+              <RestButton label="Resume" onPress={store.resume} primary />
+            ) : (
+              <RestButton label={restRemaining > 0 ? 'Skip rest' : 'Dismiss'} onPress={store.skipRest} primary />
+            )}
           </View>
         </View>
       ) : null}
@@ -631,6 +652,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   clockText: { color: colors.text, fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  clockPaused: { color: colors.warning },
+  clockGroup: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  pauseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    cursor: 'pointer',
+  },
+  pauseButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pauseText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  pauseTextActive: { color: colors.text },
   card: { gap: spacing.sm },
   cardDone: { borderColor: 'rgba(61,220,132,0.4)' },
   cardTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },

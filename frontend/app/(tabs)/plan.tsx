@@ -1,4 +1,5 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
@@ -22,7 +23,7 @@ const CADENCE_PERIOD: Record<PlanRefreshCadence, string> = {
 };
 
 /**
- * The AI-built exercise groups. "Start workout" loads a group into the Log
+ * The user's exercise groups — built by AI or by hand. "Start workout" loads a group into the Log
  * workout screen, which also suggests today's group and can load any other.
  */
 export default function ExerciseGroupsScreen() {
@@ -33,6 +34,7 @@ export default function ExerciseGroupsScreen() {
   const activeSession = useWorkoutSessionStore((s) => s.session);
   const addPlanGroup = useWorkoutSessionStore((s) => s.addPlanGroup);
   const inProgress = hasWorkoutInProgress(activeSession);
+  const [chooserOpen, setChooserOpen] = useState(false);
 
   // One workout at a time: if one's already under way, take the user back to it instead.
   function handleStart(groupIndex: number) {
@@ -63,6 +65,11 @@ export default function ExerciseGroupsScreen() {
     router.push('/plan/new');
   }
 
+  function handleBuild() {
+    setChooserOpen(false);
+    router.push('/plan/custom');
+  }
+
   return (
     <ScreenContainer>
       <ScreenHeader
@@ -73,12 +80,25 @@ export default function ExerciseGroupsScreen() {
             <Button
               label={isGenerating ? 'Generating…' : 'New plan'}
               size="small"
-              onPress={handleGenerate}
+              onPress={() => setChooserOpen((v) => !v)}
               disabled={isGenerating}
             />
           ) : null
         }
       />
+
+      {chooserOpen && latestPlan && !isGenerating ? (
+        <Card style={styles.chooserCard}>
+          <Text style={styles.reminderTitle}>Make a new plan</Text>
+          <NewPlanOptions
+            onAI={() => {
+              setChooserOpen(false);
+              handleGenerate();
+            }}
+            onBuild={handleBuild}
+          />
+        </Card>
+      ) : null}
 
       {isGenerating ? (
         <Card style={styles.statusCard}>
@@ -126,10 +146,13 @@ export default function ExerciseGroupsScreen() {
           <Ionicons name="albums-outline" size={32} color={colors.primary} />
           <Text style={styles.emptyTitle}>No exercise groups yet</Text>
           <Text style={[styles.mutedText, styles.centered]}>
-            Get workout groups built from your goals, experience, equipment and history. Groups mapped to a weekday are
-            suggested on that day when you log a workout, and any group can be loaded whenever you like.
+            Have AI build workout groups from your goals, experience, equipment and history — or put them together
+            yourself. Groups mapped to a weekday are suggested on that day when you log a workout, and any group can be
+            loaded whenever you like.
           </Text>
-          <Button label="Create Plan" onPress={handleGenerate} />
+          <View style={styles.emptyOptions}>
+            <NewPlanOptions onAI={handleGenerate} onBuild={handleBuild} />
+          </View>
         </Card>
       ) : null}
 
@@ -141,16 +164,123 @@ export default function ExerciseGroupsScreen() {
               Next refresh reminder in {daysUntil} day{daysUntil === 1 ? '' : 's'}. You can change this in Settings.
             </Text>
           ) : null}
-          <Text style={[styles.link, styles.centered]} onPress={() => router.push('/plan/history')} accessibilityRole="link">
-            Past plans
-          </Text>
+          <View style={styles.linkRow}>
+            <Text style={styles.link} onPress={() => router.push('/plan/custom?from=latest')} accessibilityRole="link">
+              Edit this plan
+            </Text>
+            <Text style={styles.linkDivider}>·</Text>
+            <Text style={styles.link} onPress={() => router.push('/plan/history')} accessibilityRole="link">
+              Past plans
+            </Text>
+          </View>
         </>
       ) : null}
     </ScreenContainer>
   );
 }
 
+/** The two ways to make a plan: AI, or by hand. */
+function NewPlanOptions({ onAI, onBuild }: { onAI: () => void; onBuild: () => void }) {
+  return (
+    <View style={styles.options}>
+      <PlanOption
+        icon="sparkles-outline"
+        title="Create with AI"
+        subtitle="Pick your days and muscles; AI fills in the exercises."
+        onPress={onAI}
+      />
+      <PlanOption
+        icon="construct-outline"
+        title="Build it yourself"
+        subtitle="Choose every group, exercise, set and rest time. No AI."
+        onPress={onBuild}
+      />
+    </View>
+  );
+}
+
+function PlanOption({
+  icon,
+  title,
+  subtitle,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${subtitle}`}
+      style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+    >
+      <View style={styles.optionIcon}>
+        <Ionicons name={icon} size={20} color={colors.primary} />
+      </View>
+      <View style={styles.flex}>
+        <Text style={styles.optionTitle}>{title}</Text>
+        <Text style={styles.optionSubtitle}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  chooserCard: {
+    gap: spacing.sm,
+    borderColor: colors.primaryMuted,
+  },
+  emptyOptions: {
+    alignSelf: 'stretch',
+    marginTop: spacing.xs,
+  },
+  options: {
+    gap: spacing.sm,
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    cursor: 'pointer',
+  },
+  optionPressed: {
+    opacity: 0.8,
+  },
+  optionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryMuted,
+  },
+  optionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  optionSubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  linkDivider: {
+    color: colors.textMuted,
+  },
   flex: {
     flex: 1,
   },

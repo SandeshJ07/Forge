@@ -231,7 +231,7 @@ def _select_prompt_exercise_names(
     return (first + rest)[:PROMPT_EXERCISE_LIMIT]
 
 
-def _attach_exercise_ids(db: Session, plan_json: dict) -> None:
+def attach_exercise_ids(db: Session, plan_json: dict) -> None:
     """
     Fills each plan exercise's exercise_id by exact (case-insensitive) name
     match against the glossary, so the app can link to the exercise detail
@@ -319,7 +319,7 @@ async def generate_plan_for_user(db: Session, user_id: UUID, preferences: dict |
     _normalize_groups(plan_json)
     if not plan_json["groups"]:
         raise PlanParseError("The AI returned no exercise groups. Please try again.")
-    _attach_exercise_ids(db, plan_json)
+    attach_exercise_ids(db, plan_json)
 
     source_summary = {
         "total_workouts_last_28_days": prompt_input.recent_workout_summary.total_workouts_last_28_days,
