@@ -11,6 +11,8 @@ import {
   useWorkoutSessionStore,
 } from '@/stores/useWorkoutSessionStore';
 import { playRestChime } from '@/lib/restChime';
+import { initRestAlerts, syncRestAlert } from '@/lib/restNotifications';
+import { useRestAlertStore } from '@/stores/useRestAlertStore';
 import { useIsDesktopWeb } from '@/hooks/useResponsive';
 import { colors, radii, spacing } from '@/constants/theme';
 
@@ -56,6 +58,18 @@ export function WorkoutSessionOverlay() {
       markChimed();
     }
   }, [rest, restRemaining, markChimed]);
+
+  // Rest alerts in the phone's / browser's notifications, for when the app is in the background.
+  const alertsOn = useRestAlertStore((s) => s.enabled);
+  const restPaused = rest?.pausedRemainingMs != null;
+  const restEndsAt = rest?.endsAt;
+  const restNext = rest?.nextLabel ?? '';
+  useEffect(() => {
+    initRestAlerts();
+  }, []);
+  useEffect(() => {
+    syncRestAlert(alertsOn && restEndsAt && !restPaused ? { endsAt: restEndsAt, nextLabel: restNext } : null);
+  }, [alertsOn, restEndsAt, restPaused, restNext]);
 
   if (!session || !hasWorkoutInProgress(session) || pathname.startsWith('/workout/new')) return null;
 

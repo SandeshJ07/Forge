@@ -1,0 +1,18 @@
+// Forge service worker — only shows and handles notifications (rest timer).
+// It deliberately caches nothing, so every deploy is picked up as usual.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of windows) {
+        if ('focus' in client) return client.focus();
+      }
+      return self.clients.openWindow(url);
+    })()
+  );
+});
