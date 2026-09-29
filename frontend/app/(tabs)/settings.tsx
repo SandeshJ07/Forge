@@ -22,6 +22,8 @@ import { GOAL_OPTIONS, MAX_GOALS, toggleGoal } from '@/constants/goals';
 import { InstallAppSheet } from '@/components/InstallAppSheet';
 import { useIsMobileWeb } from '@/hooks/useResponsive';
 import { usePwaInstall } from '@/lib/pwaInstall';
+import { getRestAlertPermission, requestRestAlertPermission, type RestAlertPermission } from '@/lib/restNotifications';
+import { useRestAlertStore } from '@/stores/useRestAlertStore';
 import type { ExperienceLevel, Gender, UnitSystem } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
@@ -309,6 +311,8 @@ export default function SettingsScreen() {
         </Card>
       </Section>
 
+      <RestAlertsSection />
+
       <Section
         title="AI plan generation"
         hint={`Plans are built with the app's AI — ${usage?.limit ?? 5} free generations a day. Optional: add your own key for unlimited use.`}
@@ -576,6 +580,48 @@ function PasswordCard({ hasPassword }: { hasPassword: boolean }) {
 }
 
 /** Permanent, so it asks twice: open the form, then re-confirm with the password (or username for Google-only accounts). */
+/** Rest-timer notifications — a per-device choice, since the permission belongs to this phone or browser. */
+function RestAlertsSection() {
+  const { enabled, setEnabled } = useRestAlertStore();
+  const [permission, setPermission] = useState<RestAlertPermission | null>(null);
+
+  useEffect(() => {
+    getRestAlertPermission().then(setPermission).catch(() => setPermission('unsupported'));
+  }, []);
+
+  async function turnOn() {
+    const result = await requestRestAlertPermission().catch(() => 'denied' as const);
+    setPermission(result);
+    setEnabled(result === 'granted');
+  }
+
+  const on = enabled && permission === 'granted';
+  return (
+    <Section title="Rest timer" hint="On this device.">
+      <Card style={styles.card}>
+        <Text style={styles.bodyText}>
+          Get a notification when rest is over, so you can put your phone down or switch apps between sets.
+        </Text>
+        {permission === 'unsupported' ? (
+          <Text style={styles.hint}>
+            This browser can't show notifications. On iPhone, install Forge on your home screen first (Share → Add to
+            Home Screen), then turn this on in the installed app.
+          </Text>
+        ) : permission === 'denied' ? (
+          <Text style={styles.hint}>
+            Notifications are blocked for Forge. Allow them in your browser or phone settings, then come back here.
+          </Text>
+        ) : (
+          <ChipGroup>
+            <Chip label="Notify me" selected={on} onPress={turnOn} />
+            <Chip label="Off" selected={!on} onPress={() => setEnabled(false)} />
+          </ChipGroup>
+        )}
+      </Card>
+    </Section>
+  );
+}
+
 function DeleteAccountSection({ hasPassword, username }: { hasPassword: boolean; username?: string }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);

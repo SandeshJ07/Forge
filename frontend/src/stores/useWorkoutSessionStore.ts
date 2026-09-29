@@ -84,6 +84,8 @@ export interface WorkoutSession {
   pausedMs?: number;
   /** Finished pauses as [start, end] epoch ms, to take them out of the saved duration. */
   pauses?: [number, number][];
+  /** The user set the workout clock by hand — it's then the saved duration. */
+  clockEdited?: boolean;
 }
 
 export interface NewExercise {
@@ -123,6 +125,10 @@ interface SessionState {
   /** Stops the workout clock, freezes the rest countdown and holds any running set stopwatch. */
   pause: () => void;
   resume: () => void;
+  /** Sets the workout clock (e.g. forgot to start it); that time is then saved as the duration. */
+  setElapsed: (seconds: number) => void;
+  /** Sets how long is left on the current rest. */
+  setRestRemaining: (seconds: number) => void;
   end: () => void;
 }
 
@@ -422,6 +428,36 @@ export const useWorkoutSessionStore = create<SessionState>()(
           }),
 
         resume: () => set((state) => ({ session: state.session && resumed(state.session) })),
+
+        setElapsed: (seconds) =>
+          set((state) => {
+            const s = state.session;
+            if (!s) return state;
+            const until = s.pausedAt ?? Date.now();
+            // Shift the start so the clock reads `seconds` now; past pauses stay out of it.
+            const startedAt = until - (s.pausedMs ?? 0) - Math.max(0, seconds) * 1000;
+            return { session: { ...s, startedAt, clockEdited: true } };
+          }),
+
+        setRestRemaining: (seconds) =>
+          set((state) => {
+            const s = state.session;
+            if (!s?.rest) return state;
+            const ms = Math.max(0, Math.min(MAX_REST_SECONDS, seconds)) * 1000;
+            const paused = s.rest.pausedRemainingMs != null;
+            return {
+              session: {
+                ...s,
+                rest: {
+                  ...s.rest,
+                  endsAt: Date.now() + ms,
+                  pausedRemainingMs: paused ? ms : null,
+                  totalSeconds: Math.max(1, Math.round(ms / 1000)),
+                  chimed: false,
+                },
+              },
+            };
+          }),
 
         end: () => set({ session: null }),
       };

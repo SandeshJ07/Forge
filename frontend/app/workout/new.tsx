@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { DatePickerField } from '@/components/ui/DatePickerField';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ExerciseListItem } from '@/components/ExerciseListItem';
 import { formatClock, useNow } from '@/components/WorkoutSessionOverlay';
+import { TimeEditSheet } from '@/components/TimeEditSheet';
 import { useExercises } from '@/hooks/useExercises';
 import { useLatestPlan } from '@/hooks/usePlans';
 import { useLogManualWorkout } from '@/hooks/useWorkouts';
@@ -30,6 +31,8 @@ import {
   type SetField,
 } from '@/stores/useWorkoutSessionStore';
 import { primeRestChime } from '@/lib/restChime';
+import { getRestAlertPermission, requestRestAlertPermission, type RestAlertPermission } from '@/lib/restNotifications';
+import { useRestAlertStore } from '@/stores/useRestAlertStore';
 import { formatWeight, LB_PER_KG } from '@/lib/format';
 import {
   TRACKING_FIELDS,
@@ -96,6 +99,9 @@ export default function LogWorkoutScreen() {
   const [suggestionExpanded, setSuggestionExpanded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [editingClock, setEditingClock] = useState<'workout' | 'rest' | null>(null);
+  const restAlerts = useRestAlertStore();
+  const [alertPermission, setAlertPermission] = useState<RestAlertPermission | null>(null);
   const [summary, setSummary] = useState<{ sets: number; duration: number | null; prs: string[] } | null>(null);
 
   const query = search.trim();
@@ -125,6 +131,23 @@ export default function LogWorkoutScreen() {
   const doneSets = exercises.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
   const rest = session?.rest ?? null;
   const restRemaining = rest ? restRemainingSeconds(rest, now) : 0;
+  const hasRest = Boolean(rest);
+
+  // Offer rest alerts (notifications) the first time a rest starts, unless they're on, blocked or dismissed.
+  useEffect(() => {
+    if (hasRest && alertPermission === null) getRestAlertPermission().then(setAlertPermission).catch(() => {});
+  }, [hasRest, alertPermission]);
+  const offerAlerts =
+    !restAlerts.enabled &&
+    !restAlerts.promptDismissed &&
+    (alertPermission === 'default' || alertPermission === 'granted');
+
+  async function turnOnAlerts() {
+    const result = await requestRestAlertPermission().catch(() => 'denied' as const);
+    setAlertPermission(result);
+    if (result === 'granted') restAlerts.setEnabled(true);
+    else restAlerts.dismissPrompt();
+  }
 
   function addFromSearch(exercise: Exercise) {
     const timed = TRACKING_FIELDS[exercise.tracking_type].time;
@@ -186,7 +209,9 @@ export default function LogWorkoutScreen() {
       ? Math.round((spanEnd - spanStart - (loggingToday ? pausedWithin(session, spanStart, spanEnd) : 0)) / 1000)
       : 0;
     const live = loggingToday ? Math.round(elapsedSeconds(session, Date.now())) : 0;
-    const duration = plausible(fromExercises) ? fromExercises : plausible(live) ? live : null;
+    // A clock the user set by hand wins: they've told us how long it took.
+    const duration =
+      session.clockEdited && plausible(live) ? live : plausible(fromExercises) ? fromExercises : plausible(live) ? live : null;
     try {
       const result = await logWorkout.mutateAsync({
         title: session.title.trim() || 'Workout',
@@ -262,10 +287,16 @@ export default function LogWorkoutScreen() {
               {doneSets} of {totalSets} sets done
             </Text>
             <View style={styles.clockGroup}>
-              <View style={styles.clock} accessibilityLabel={`Elapsed ${formatClock(elapsed)}${paused ? ', paused' : ''}`}>
+              <Pressable
+                onPress={() => setEditingClock('workout')}
+                accessibilityRole="button"
+                accessibilityLabel={`Elapsed ${formatClock(elapsed)}${paused ? ', paused' : ''}. Edit workout time`}
+                style={({ pressed }) => [styles.clock, pressed && styles.pressed]}
+              >
                 <Ionicons name="time-outline" size={15} color={paused ? colors.warning : colors.textMuted} />
                 <Text style={[styles.clockText, paused && styles.clockPaused]}>{formatClock(elapsed)}</Text>
-              </View>
+                <Ionicons name="pencil" size={12} color={colors.textMuted} />
+              </Pressable>
               <Pressable
                 onPress={paused ? store.resume : store.pause}
                 accessibilityRole="button"
@@ -431,7 +462,7 @@ export default function LogWorkoutScreen() {
             </Text>
           </>
         ) : null}
-        {rest ? <View style={{ height: 130 }} /> : null}
+        {rest ? <View style={{ height: offerAlerts ? 170 : 130 }} /> : null}
       </ScreenContainer>
 
       <PlanGroupsSheet
@@ -441,6 +472,29 @@ export default function LogWorkoutScreen() {
         todayIndex={todayIndex}
         onPick={loadGroup}
         onClose={() => setGroupsOpen(false)}
+      />
+
+      <TimeEditSheet
+        visible={editingClock === 'workout'}
+        title="Workout time"
+        hint="Forgot to start the clock, or left it running? Set how long you've been training — this is saved as the workout's duration. A plain number is minutes."
+        seconds={elapsed}
+        bareUnit="minutes"
+        max={12 * 3600}
+        steps={[-300, -60, 60, 300]}
+        onSave={store.setElapsed}
+        onClose={() => setEditingClock(null)}
+      />
+      <TimeEditSheet
+        visible={editingClock === 'rest' && Boolean(rest)}
+        title="Rest time left"
+        hint="Set how much rest is left. A plain number is seconds."
+        seconds={Math.max(0, restRemaining)}
+        bareUnit="seconds"
+        max={MAX_REST_SECONDS}
+        steps={[-30, -15, 15, 30]}
+        onSave={store.setRestRemaining}
+        onClose={() => setEditingClock(null)}
       />
 
       {rest ? (
@@ -459,11 +513,32 @@ export default function LogWorkoutScreen() {
                 {rest.nextLabel}
               </Text>
             </View>
-            <Text style={styles.restClock}>{formatClock(Math.max(0, restRemaining))}</Text>
+            <Pressable
+              onPress={() => setEditingClock('rest')}
+              accessibilityRole="button"
+              accessibilityLabel={`${formatClock(Math.max(0, restRemaining))} rest left. Edit rest time`}
+              hitSlop={6}
+              style={({ pressed }) => [styles.restClockButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.restClock}>{formatClock(Math.max(0, restRemaining))}</Text>
+              <Ionicons name="pencil" size={14} color={colors.textMuted} />
+            </Pressable>
           </View>
           <View style={styles.restTrack}>
             <View style={[styles.restFill, { width: `${Math.max(0, Math.min(1, restRemaining / rest.totalSeconds)) * 100}%` }]} />
           </View>
+          {offerAlerts ? (
+            <View style={styles.alertOffer}>
+              <Ionicons name="notifications-outline" size={16} color={colors.primary} />
+              <Text style={[styles.muted, styles.flex]}>Get a notification when rest ends, even with the app closed.</Text>
+              <Text style={styles.alertOn} onPress={turnOnAlerts} accessibilityRole="button">
+                Turn on
+              </Text>
+              <Pressable onPress={restAlerts.dismissPrompt} accessibilityRole="button" accessibilityLabel="No thanks" hitSlop={8}>
+                <Ionicons name="close" size={16} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
           <View style={styles.restActions}>
             <RestButton label="−15s" onPress={() => store.adjustRest(-15)} />
             <RestButton label="+15s" onPress={() => store.adjustRest(15)} />
@@ -820,9 +895,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radii.pill,
     backgroundColor: colors.surfaceAlt,
+    cursor: 'pointer',
   },
   clockText: { color: colors.text, fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
   clockPaused: { color: colors.warning },
+  restClockButton: { flexDirection: 'row', alignItems: 'center', gap: 6, cursor: 'pointer' },
+  alertOffer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  alertOn: { color: colors.primary, fontSize: 14, fontWeight: '700', cursor: 'pointer' },
   clockGroup: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   pauseButton: {
     flexDirection: 'row',
