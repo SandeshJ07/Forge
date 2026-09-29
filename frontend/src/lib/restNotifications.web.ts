@@ -2,13 +2,15 @@
  * Rest-timer alerts on the web, through the browser's notifications (shown by
  * the service worker in public/sw.js, which Android Chrome requires).
  *
- * - While resting with the app in the background: a quiet "Resting — back at
- *   4:57 PM" notification, so the lock screen / shade shows when rest ends.
+ * - While resting with the app in the background: a quiet live countdown
+ *   ("Rest · 1:23 left"), updated in place every second, that also says when
+ *   rest ends ("back at 4:57 PM").
  * - When rest runs out while the app is in the background: "Rest over", with
  *   sound and vibration where the device allows.
  *
- * Browsers pause background pages to save battery (iPhone most of all), so the
- * rest-over alert can arrive late there; the "back at" time is always right.
+ * Browsers slow down or pause background pages to save battery (iPhone most
+ * of all), so there the countdown can stop ticking and the rest-over alert
+ * can arrive late; the "back at" time is always right.
  * On iPhone, web notifications only work in the installed (home screen) app.
  */
 import type { RestAlert, RestAlertPermission } from './restNotifications';
@@ -18,6 +20,8 @@ const ICON = '/icon-192.png';
 
 let current: RestAlert | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
+let ticker: ReturnType<typeof setInterval> | null = null;
+const TICK_MS = 1000;
 let listening = false;
 
 function supported(): boolean {
@@ -33,7 +37,15 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
   }
 }
 
-async function show(title: string, body: string, loud: boolean): Promise<void> {
+// Updates go out one at a time and in order, so a late countdown tick can't overwrite "Rest over".
+let queue: Promise<void> = Promise.resolve();
+
+function show(title: string, body: string, loud: boolean): Promise<void> {
+  queue = queue.then(() => showNow(title, body, loud));
+  return queue;
+}
+
+async function showNow(title: string, body: string, loud: boolean): Promise<void> {
   if (!supported() || Notification.permission !== 'granted') return;
   const options: NotificationOptions & { renotify?: boolean; vibrate?: number[] } = {
     body,
@@ -55,7 +67,12 @@ async function show(title: string, body: string, loud: boolean): Promise<void> {
   }
 }
 
-async function clear(): Promise<void> {
+function clear(): Promise<void> {
+  queue = queue.then(clearNow);
+  return queue;
+}
+
+async function clearNow(): Promise<void> {
   const reg = await registration();
   if (!reg) return;
   try {
@@ -69,18 +86,40 @@ function clockTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-function restingNotice(alert: RestAlert): void {
-  const left = Math.max(0, Math.round((alert.endsAt - Date.now()) / 1000));
-  if (left <= 0) return;
+function isHidden(): boolean {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+/** Shows (or quietly updates in place) the countdown; false once rest is over. */
+function restingNotice(alert: RestAlert): boolean {
+  const left = Math.ceil((alert.endsAt - Date.now()) / 1000);
+  if (left <= 0) return false;
   const m = Math.floor(left / 60);
   const s = String(left % 60).padStart(2, '0');
-  void show(`Resting — back at ${clockTime(alert.endsAt)}`, `${m}:${s} left · ${alert.nextLabel}`, false);
+  void show(`Rest · ${m}:${s} left`, `Back at ${clockTime(alert.endsAt)} · ${alert.nextLabel}`, false);
+  return true;
+}
+
+function stopTicker(): void {
+  if (ticker) clearInterval(ticker);
+  ticker = null;
+}
+
+/** Live countdown while the app is in the background. */
+function startTicker(): void {
+  stopTicker();
+  const alert = current;
+  if (!alert || !restingNotice(alert)) return;
+  ticker = setInterval(() => {
+    if (current !== alert || !isHidden() || !restingNotice(alert)) stopTicker();
+  }, TICK_MS);
 }
 
 function onVisibilityChange(): void {
-  if (document.visibilityState === 'hidden') {
-    if (current) restingNotice(current);
+  if (isHidden()) {
+    startTicker();
   } else {
+    stopTicker();
     void clear(); // back in the app: its own timer takes over
   }
 }
@@ -112,15 +151,16 @@ export function syncRestAlert(alert: RestAlert | null): void {
   const changed = current?.endsAt !== alert?.endsAt;
   current = alert;
   if (!alert) {
+    stopTicker();
     void clear();
     return;
   }
-  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
-  if (changed && hidden) restingNotice(alert); // e.g. +15s pressed from elsewhere
+  if (changed && isHidden()) startTicker(); // e.g. a new rest started while in the background
   const wait = alert.endsAt - Date.now();
   if (wait < -5000) return; // long over — nothing to announce
   timer = setTimeout(() => {
     timer = null;
-    if (document.visibilityState === 'hidden') void show('Rest over — time to lift 💪', alert.nextLabel, true);
+    stopTicker();
+    if (isHidden()) void show('Rest over — time to lift 💪', alert.nextLabel, true);
   }, Math.max(0, wait));
 }
