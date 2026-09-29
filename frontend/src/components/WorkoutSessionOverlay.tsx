@@ -34,6 +34,15 @@ export function formatClock(totalSeconds: number): string {
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
+/** Plays the rest-over chime once per rest, whichever check notices first. */
+function chimeOnce(): void {
+  const { session, markChimed } = useWorkoutSessionStore.getState();
+  const rest = session?.rest;
+  if (!rest || rest.chimed || rest.pausedRemainingMs != null || rest.endsAt > Date.now() + 50) return;
+  markChimed();
+  playRestChime();
+}
+
 /**
  * Mounted once for the signed-in app. Fires the rest-over chime wherever the
  * user is (even browsing other tabs), and — off the workout screen — shows a
@@ -41,7 +50,6 @@ export function formatClock(totalSeconds: number): string {
  */
 export function WorkoutSessionOverlay() {
   const session = useWorkoutSessionStore((s) => s.session);
-  const markChimed = useWorkoutSessionStore((s) => s.markChimed);
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -53,11 +61,18 @@ export function WorkoutSessionOverlay() {
   const restRemaining = rest ? restRemainingSeconds(rest, now) : 0;
 
   useEffect(() => {
-    if (rest && !rest.chimed && restRemaining <= 0) {
-      playRestChime();
-      markChimed();
-    }
-  }, [rest, restRemaining, markChimed]);
+    if (rest && !rest.chimed && restRemaining <= 0) chimeOnce();
+  }, [rest, restRemaining]);
+
+  // Also a timer for the exact moment rest ends: the clock above only re-renders while the screen
+  // is being drawn, and browsers slow that right down in the background — this still fires, so the
+  // chime plays with the app in the background too (where the browser allows it).
+  const restEndsAtForChime = rest && !rest.chimed && rest.pausedRemainingMs == null ? rest.endsAt : null;
+  useEffect(() => {
+    if (restEndsAtForChime === null) return;
+    const id = setTimeout(chimeOnce, Math.max(0, restEndsAtForChime - Date.now()));
+    return () => clearTimeout(id);
+  }, [restEndsAtForChime]);
 
   // Rest alerts in the phone's / browser's notifications, for when the app is in the background.
   const alertsOn = useRestAlertStore((s) => s.enabled);
