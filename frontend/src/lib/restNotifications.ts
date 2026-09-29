@@ -17,6 +17,9 @@ export interface RestAlert {
 export type RestAlertPermission = 'granted' | 'denied' | 'default' | 'unsupported';
 
 const CHANNEL = 'rest-timer';
+// Forge's own chime (bundled via the expo-notifications plugin in app.json), so it sounds the same
+// with the app closed as it does in the app.
+const SOUND = 'rest-done.wav';
 let scheduledId: string | null = null;
 let scheduledFor: number | null = null;
 let initialised = false;
@@ -43,7 +46,7 @@ export function initRestAlerts(): void {
       name: 'Rest timer',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 120, 250],
-      sound: 'default',
+      sound: SOUND,
     }).catch(() => {});
   }
 }
@@ -67,7 +70,7 @@ export function syncRestAlert(alert: RestAlert | null): void {
   if (previous) Notifications.cancelScheduledNotificationAsync(previous).catch(() => {});
   if (!alert || alert.endsAt <= Date.now() + 1000) return;
   Notifications.scheduleNotificationAsync({
-    content: { title: 'Rest over — time to lift 💪', body: alert.nextLabel, sound: 'default' },
+    content: { title: 'Rest over — time to lift 💪', body: alert.nextLabel, sound: SOUND },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: new Date(alert.endsAt),
