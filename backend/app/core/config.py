@@ -66,6 +66,17 @@ class Settings(BaseSettings):
 
     email_code_expire_minutes: int = 30
 
+    # --- Gym reminders (web push) ---
+    # VAPID key pair for web push. Generate once with: python -m scripts.generate_vapid_keys
+    # Empty = web push reminders are off (the native app schedules its own).
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    # Contact for push services, e.g. "mailto:you@example.com".
+    vapid_subject: str = "mailto:admin@forge.app"
+    # POST /reminders/dispatch needs this in the X-Cron-Secret header. Call it every
+    # few minutes from a cron (it also wakes a sleeping free-tier server). Empty = disabled.
+    reminder_cron_secret: str = ""
+
     @field_validator("anthropic_api_key", "gemini_api_key", mode="before")
     @classmethod
     def _placeholder_means_unset(cls, value: str | None) -> str | None:

@@ -40,6 +40,8 @@ class PlanPreferences(BaseModel):
     # Muscles to train on each day (any number). Days left out are the AI's call.
     day_focus: dict[Weekday, list[Muscle]] = Field(default_factory=dict)
     include_warmup: bool | None = None
+    # How the week is organised. None = the AI picks the split that fits the days and goal.
+    split: Literal["full_body", "upper_lower", "push_pull_legs", "arnold", "body_part"] | None = None
     # Individual equipment available for this plan. None = not specified (fall back to profile).
     equipment: list[EquipmentItem] | None = Field(default=None, max_length=len(EQUIPMENT_KEYS))
     session_minutes: Literal[30, 45, 60, 90] | None = None

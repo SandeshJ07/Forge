@@ -19,13 +19,20 @@ class DietPreferences(BaseModel):
     target_weight_kg: float | None = Field(default=None, ge=30, le=300)
     budget: Budget | None = None
     cooking_time: CookingTime | None = None
-    # Allergies, cuisines, foods to avoid, medical notes — anything else.
+    # Cuisine(s) to base meals on, in the user's words; Indian unless they say otherwise.
+    cuisine: str = Field(default="Indian", max_length=100)
+    # Allergies, foods to avoid, medical notes — anything else.
     notes: str | None = Field(default=None, max_length=1000)
 
     @field_validator("notes")
     @classmethod
     def _blank_notes_to_none(cls, value: str | None) -> str | None:
         return value.strip() or None if value else None
+
+    @field_validator("cuisine")
+    @classmethod
+    def _blank_cuisine_to_indian(cls, value: str) -> str:
+        return value.strip() or "Indian"
 
 
 class GenerateDietPlanRequest(BaseModel):

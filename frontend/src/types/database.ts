@@ -91,6 +91,31 @@ export interface WorkoutSet {
   ended_at: string | null;
 }
 
+/** GET /workouts/{id}/detail */
+export interface WorkoutDetail {
+  workout: Workout;
+  exercises: {
+    exercise_id: string | null;
+    name: string;
+    tracking_type: TrackingType | null;
+    muscle_groups: string[];
+    secondary_muscle_groups: string[];
+    sets: WorkoutSet[];
+    /** Heavier than any earlier workout for this exercise. */
+    is_pr: boolean;
+  }[];
+  primary_muscles: string[];
+  secondary_muscles: string[];
+  personal_records: {
+    exercise_id: string;
+    name: string;
+    weight_kg: number;
+    reps: number | null;
+    /** null when it's the first time this exercise was logged with weight. */
+    previous_best_kg: number | null;
+  }[];
+}
+
 export interface Measurement {
   id: string;
   user_id: string;
@@ -127,12 +152,16 @@ export type Muscle =
   | 'calves'
   | 'cardio';
 
+export type PlanSplit = 'full_body' | 'upper_lower' | 'push_pull_legs' | 'arnold' | 'body_part';
+
 /** Per-plan choices from the Plan preferences screen; every field optional (the AI decides). */
 export interface PlanPreferences {
   training_days?: Weekday[];
   /** Muscles per day, any number; days left out are the AI's call. */
   day_focus?: Partial<Record<Weekday, Muscle[]>>;
   include_warmup?: boolean;
+  /** How the week is organised; omitted = the AI picks. */
+  split?: PlanSplit;
   /** Individual equipment keys (src/constants/equipmentCatalog.ts); omitted = not specified. */
   equipment?: string[];
   session_minutes?: 30 | 45 | 60 | 90;
@@ -199,6 +228,11 @@ export interface UserProfile {
   plan_refresh_cadence: PlanRefreshCadence;
   /** Days between reminders when the cadence is "custom" (1-365). */
   plan_refresh_days: number | null;
+  /** Gym reminder time, local "HH:MM"; null = off. */
+  gym_reminder_time: string | null;
+  gym_reminder_days: Weekday[];
+  /** IANA timezone the reminder time is in. */
+  timezone: string | null;
   gender: Gender | null;
   birth_year: number | null;
   height_cm: number | null;
@@ -299,6 +333,8 @@ export interface DietPreferences {
   target_weight_kg?: number;
   budget?: DietBudget;
   cooking_time?: CookingTime;
+  /** Cuisine(s) to base meals on, in the user's words; the server defaults to Indian. */
+  cuisine?: string;
   notes?: string;
 }
 

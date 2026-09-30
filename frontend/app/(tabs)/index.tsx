@@ -13,6 +13,7 @@ import { PersonalRecordRow } from '@/components/PersonalRecordRow';
 import { InstallPwaPrompt } from '@/components/InstallPwaPrompt';
 import { StreakCard } from '@/components/StreakCard';
 import { ProgressStatsCard } from '@/components/ProgressStatsCard';
+import { DietTodayCard } from '@/components/DietTodayCard';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { formatDay, formatDaysAgo } from '@/lib/format';
 import { hasWorkoutInProgress, useWorkoutSessionStore } from '@/stores/useWorkoutSessionStore';
@@ -93,6 +94,8 @@ export default function DashboardScreen() {
         </>
       )}
 
+      <DietTodayCard />
+
       {recordsCard}
 
       {workouts?.length ? (
@@ -106,7 +109,7 @@ export default function DashboardScreen() {
           {workouts.slice(0, 5).map((w) => (
             <Pressable
               key={w.id}
-              onPress={() => router.navigate('/log')}
+              onPress={() => router.push(`/workout/${w.id}`)}
               style={({ pressed }) => [styles.activityRow, pressed && styles.pressed]}
             >
               <View style={styles.activityIcon}>

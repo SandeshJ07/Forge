@@ -18,3 +18,5 @@ tzdata==2026.4
 # Verifies Google Sign-In ID tokens (app/services/google_auth.py); requests is its HTTP transport.
 google-auth==2.58.1
 requests==2.34.2
+# Web push for gym reminders (app/services/reminders.py).
+pywebpush==2.5.0

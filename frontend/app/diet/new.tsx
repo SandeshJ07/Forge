@@ -46,6 +46,7 @@ export default function DietPreferencesScreen() {
   const [targetWeight, setTargetWeight] = useState('');
   const [budget, setBudget] = useState<DietBudget | undefined>();
   const [cookingTime, setCookingTime] = useState<CookingTime | undefined>();
+  const [cuisine, setCuisine] = useState('Indian');
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [prefilled, setPrefilled] = useState(false);
@@ -62,6 +63,7 @@ export default function DietPreferencesScreen() {
       }
       setBudget(last.budget);
       setCookingTime(last.cooking_time);
+      setCuisine(last.cuisine || 'Indian');
       setNotes(last.notes ?? '');
     }
     setPrefilled(true);
@@ -83,6 +85,7 @@ export default function DietPreferencesScreen() {
       target_weight_kg: weightKg === null ? undefined : Math.round(weightKg * 10) / 10,
       budget,
       cooking_time: cookingTime,
+      cuisine: cuisine.trim() || 'Indian',
       notes: notes.trim() || undefined,
     };
     try {
@@ -177,12 +180,22 @@ export default function DietPreferencesScreen() {
         </ChipGroup>
       </Section>
 
+      <Section title="Cuisine" hint="Meals are Indian by default — change it to any cuisine, or mix a few.">
+        <TextField
+          placeholder="Indian"
+          value={cuisine}
+          onChangeText={setCuisine}
+          maxLength={100}
+          accessibilityLabel="Cuisine"
+        />
+      </Section>
+
       <Section
         title="Anything else?"
-        hint="Optional — allergies, foods you dislike, cuisine you like, meal timings, health conditions."
+        hint="Optional — allergies, foods you dislike, meal timings, health conditions."
       >
         <TextField
-          placeholder="e.g. Allergic to peanuts. Prefer South Indian food. No meals after 9 pm."
+          placeholder="e.g. Allergic to peanuts. No mushrooms. No meals after 9 pm."
           value={notes}
           onChangeText={setNotes}
           multiline

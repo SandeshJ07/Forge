@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
 import { RefreshReminderPicker } from '@/components/RefreshReminderPicker';
+import { GymReminderSettings } from '@/components/GymReminderSettings';
 import { changePassword, deleteAccount, requestSetPasswordCode, signOutAndReset, updateUsername } from '@/api/auth';
 import { clearAiKey, saveAiKey } from '@/api/aiKeys';
 import { AI_PROVIDERS, providerInfo } from '@/constants/aiProviders';
@@ -253,6 +254,7 @@ export default function SettingsScreen() {
               }
             />
           </Field>
+          <GymReminderSettings profile={profile} />
         </Card>
       </Section>
 

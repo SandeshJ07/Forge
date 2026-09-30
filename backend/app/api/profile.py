@@ -34,7 +34,13 @@ def update_profile(
     db: Session = Depends(get_db),
 ) -> UserProfile:
     profile = _get_or_create_profile(db, current_user.id)
-    for field, value in body.dump_set_fields().items():
+    fields = body.dump_set_fields()
+    if fields.get("gym_reminder_days", []) is None:  # the column isn't nullable; null means "no days"
+        fields["gym_reminder_days"] = []
+    if "gym_reminder_time" in fields or "gym_reminder_days" in fields:
+        # A changed schedule can fire again today.
+        profile.gym_reminder_last_sent = None
+    for field, value in fields.items():
         setattr(profile, field, value)
     if profile.plan_refresh_cadence == "custom" and not profile.plan_refresh_days:
         raise HTTPException(

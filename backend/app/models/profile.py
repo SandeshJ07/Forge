@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Mapped, column_property, mapped_column
@@ -33,6 +33,10 @@ class UserProfile(Base):
             name="user_profiles_plan_refresh_days_check",
         ),
         CheckConstraint("ai_provider in ('anthropic','gemini')", name="user_profiles_ai_provider_check"),
+        CheckConstraint(
+            "gym_reminder_time IS NULL OR gym_reminder_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+            name="user_profiles_gym_reminder_time_check",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -61,6 +65,15 @@ class UserProfile(Base):
     # taps "Create my plan", whether or not that generation then succeeds.
     # Encrypted: its free-text notes can mention injuries or health conditions.
     plan_preferences: Mapped[dict | None] = mapped_column(EncryptedJSON)
+    # Daily "time to train" reminder: local time "HH:MM" (None = off) on these weekdays
+    # ("mon".."sun"), in the user's IANA timezone.
+    gym_reminder_time: Mapped[str | None] = mapped_column(String)
+    gym_reminder_days: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
+    timezone: Mapped[str | None] = mapped_column(String)
+    # Local date the last reminder went out, so each day's is sent once.
+    gym_reminder_last_sent: Mapped[date | None] = mapped_column(Date)
 
     # Read-only, from users: whether the account has a password (Google-only
     # accounts don't). The app uses it to ask for the right re-confirmation.

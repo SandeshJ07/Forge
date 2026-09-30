@@ -372,6 +372,7 @@ async def generate_plan_for_user(db: Session, user_id: UUID, preferences: dict |
         prompt_input.include_warmup = preferences["include_warmup"]
     prompt_input.session_minutes = preferences.get("session_minutes")
     prompt_input.notes = preferences.get("notes")
+    prompt_input.split = preferences.get("split")
     prompt = build_plan_prompt(prompt_input)
 
     # Plans now carry how-to cues, intensity and full warm-ups per group, so allow a longer answer.

@@ -14,7 +14,7 @@ import { useGeneratePlan, useLatestPlan, usePlanGeneration, usePlanUsage } from 
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { providerInfo } from '@/constants/aiProviders';
 import { ALL_EQUIPMENT, EQUIPMENT_GROUPS, defaultEquipmentFor } from '@/constants/equipmentCatalog';
-import type { Muscle, PlanPreferences, PlanUsage, Weekday } from '@/types/database';
+import type { Muscle, PlanPreferences, PlanSplit, PlanUsage, Weekday } from '@/types/database';
 import { colors, spacing } from '@/constants/theme';
 
 const WEEKDAYS: { value: Weekday; short: string; long: string }[] = [
@@ -43,6 +43,13 @@ const MUSCLE_OPTIONS: { value: Muscle; label: string }[] = [
 ];
 const MUSCLE_VALUES = new Set<string>(MUSCLE_OPTIONS.map((m) => m.value));
 const SESSION_LENGTHS: NonNullable<PlanPreferences['session_minutes']>[] = [30, 45, 60, 90];
+const SPLITS: { value: PlanSplit; label: string; description: string }[] = [
+  { value: 'full_body', label: 'Full body', description: 'Whole body every session — great for 2-3 days a week.' },
+  { value: 'upper_lower', label: 'Upper / Lower', description: 'Alternate upper- and lower-body days — suits 4 days.' },
+  { value: 'push_pull_legs', label: 'Push / Pull / Legs', description: 'Push, pull and leg days — suits 3 or 6 days.' },
+  { value: 'arnold', label: 'Arnold', description: 'Chest + back, shoulders + arms, legs — suits 3 or 6 days.' },
+  { value: 'body_part', label: 'Body-part', description: 'One or two muscle groups a day — suits 5 days.' },
+];
 const DEFAULT_DAYS: Weekday[] = ['mon', 'wed', 'fri'];
 
 /** Plans saved before per-day muscle lists stored a single focus string; keep only valid muscle arrays. */
@@ -74,6 +81,7 @@ export default function PlanPreferencesScreen() {
   const [days, setDays] = useState<Weekday[]>(DEFAULT_DAYS);
   const [dayFocus, setDayFocus] = useState<Partial<Record<Weekday, Muscle[]>>>({});
   const [includeWarmup, setIncludeWarmup] = useState(true);
+  const [split, setSplit] = useState<PlanSplit | undefined>();
   const [equipment, setEquipment] = useState<string[]>([]);
   const [sessionMinutes, setSessionMinutes] = useState<PlanPreferences['session_minutes']>();
   const [notes, setNotes] = useState('');
@@ -95,6 +103,7 @@ export default function PlanPreferencesScreen() {
     if (last) {
       if (last.training_days?.length) setDays(last.training_days);
       setDayFocus(cleanDayFocus(last.day_focus));
+      setSplit(SPLITS.some((s) => s.value === last.split) ? last.split : undefined);
       setSessionMinutes(last.session_minutes);
       setNotes(last.notes ?? '');
     }
@@ -128,6 +137,7 @@ export default function PlanPreferencesScreen() {
       // Only send focus for days that are still selected.
       day_focus: Object.fromEntries(Object.entries(dayFocus).filter(([d]) => days.includes(d as Weekday))),
       include_warmup: includeWarmup,
+      split,
       equipment,
       session_minutes: sessionMinutes,
       notes: notes.trim() || undefined,
@@ -167,6 +177,18 @@ export default function PlanPreferencesScreen() {
           ))}
         </ChipGroup>
         {!days.length ? <Text style={styles.warning}>Pick at least one day.</Text> : null}
+      </Section>
+
+      <Section
+        title="Split"
+        hint={SPLITS.find((s) => s.value === split)?.description ?? 'Optional — the AI picks the split that fits your days and goal.'}
+      >
+        <ChipGroup>
+          <Chip label="AI decides" selected={!split} onPress={() => setSplit(undefined)} />
+          {SPLITS.map((s) => (
+            <Chip key={s.value} label={s.label} selected={split === s.value} onPress={() => setSplit(s.value)} />
+          ))}
+        </ChipGroup>
       </Section>
 
       {days.length ? (

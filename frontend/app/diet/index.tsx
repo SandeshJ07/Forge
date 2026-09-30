@@ -6,6 +6,7 @@ import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
+import { PlanSectionSwitch } from '@/components/PlanSectionSwitch';
 import { useDietAccess, useDietGeneration, useLatestDietPlan } from '@/hooks/useDiet';
 import { providerInfo } from '@/constants/aiProviders';
 import { formatDay } from '@/lib/format';
@@ -37,6 +38,8 @@ export default function DietPlanScreen() {
 
   return (
     <ScreenContainer>
+      <PlanSectionSwitch active="diet" />
+
       {!hasKey ? (
         <Card style={styles.keyCard}>
           <Ionicons name="key-outline" size={22} color={colors.warning} />

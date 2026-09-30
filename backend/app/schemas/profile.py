@@ -29,6 +29,13 @@ class UserProfileResponse(BaseModel):
     onboarded_at: datetime | None
     has_password: bool
     plan_preferences: dict[str, Any] | None = None
+    gym_reminder_time: str | None = None
+    gym_reminder_days: list[str] = []
+    timezone: str | None = None
+
+
+Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
 class UserProfileUpdate(BaseModel):
@@ -46,6 +53,28 @@ class UserProfileUpdate(BaseModel):
     gender: Literal["male", "female", "other", "prefer_not_to_say"] | None = None
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
     height_cm: float | None = Field(default=None, ge=50, le=300)
+    # Gym reminder: local "HH:MM" (null turns it off), which weekdays, and the device's timezone.
+    gym_reminder_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    gym_reminder_days: list[Weekday] | None = Field(default=None, max_length=7)
+    timezone: str | None = Field(default=None, max_length=64)
+
+    @field_validator("gym_reminder_days")
+    @classmethod
+    def _order_days(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else sorted(set(value), key=WEEKDAY_ORDER.index)
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError("Unknown timezone") from None
+        return value
 
     @field_validator("goals")
     @classmethod

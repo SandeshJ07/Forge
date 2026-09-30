@@ -101,9 +101,13 @@ def build_diet_prompt(db: Session, user_id: UUID, preferences: dict) -> str:
         about.append("Training goals: " + ", ".join(GOAL_TEXT.get(g, g) for g in profile.goals))
     about.append(f"Workouts in the last 4 weeks: {workouts_28d} (about {workouts_28d / 4:.1f} a week)")
 
+    # Plans saved before the cuisine field existed default to Indian too.
+    cuisine = (preferences.get("cuisine") or "Indian").strip()
     wants = [
         DIET_TYPE_RULES[preferences["diet_type"]],
         f"Meals per day: exactly {preferences['meals_per_day']}.",
+        f'Cuisine: base the meals on {cuisine} cuisine (the person\'s words: "{cuisine}") — familiar home-style '
+        "dishes and ingredients from it, not fusion versions.",
     ]
     if preferences.get("budget"):
         wants.append(BUDGET_TEXT[preferences["budget"]])
@@ -119,7 +123,9 @@ def build_diet_prompt(db: Session, user_id: UUID, preferences: dict) -> str:
         else ""
     )
 
-    return f"""You are a sports nutritionist. Write a 7-day diet plan for this person.
+    return f"""You are a registered sports dietitian (CSSD) who also coaches strength training in a gym. You plan
+meals around training: enough protein spread across the day, carbohydrates timed around workouts, and food the
+person will actually enjoy and can afford. Write a 7-day diet plan for this person.
 
 About them:
 {about_block}
@@ -135,6 +141,8 @@ Rules:
 - Use real, easy-to-find foods. Give quantities as household measures with grams, e.g. "1 cup cooked rice (150 g)".
 - Vary meals across the week but reuse ingredients so the shopping list stays short.
 - Keep each meal's calories and protein realistic; each day's meals should add up close to the daily targets.
+- Spread protein over the meals (roughly 20-40 g each) and put a carb-and-protein meal 1-3 hours before and
+  within 2 hours after training.
 - This is general guidance, not medical advice. If the notes mention a medical condition, pregnancy or an
   eating disorder, keep the plan conservative and add a tip to check it with a doctor or dietitian.
 

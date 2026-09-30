@@ -39,6 +39,36 @@ class WorkoutSetResponse(BaseModel):
     ended_at: datetime | None
 
 
+class WorkoutDetailExercise(BaseModel):
+    """One exercise in a logged workout, with its sets in the order done."""
+
+    exercise_id: UUID | None
+    name: str
+    tracking_type: str | None
+    muscle_groups: list[str]
+    secondary_muscle_groups: list[str]
+    sets: list[WorkoutSetResponse]
+    # A heavier weight than any earlier workout had for this exercise.
+    is_pr: bool = False
+
+
+class WorkoutSessionPR(BaseModel):
+    exercise_id: UUID
+    name: str
+    weight_kg: float
+    reps: int | None
+    # None when this was the first time the exercise was logged with weight.
+    previous_best_kg: float | None
+
+
+class WorkoutDetailResponse(BaseModel):
+    workout: WorkoutResponse
+    exercises: list[WorkoutDetailExercise]
+    primary_muscles: list[str]
+    secondary_muscles: list[str]
+    personal_records: list[WorkoutSessionPR]
+
+
 class ManualSetInput(BaseModel):
     # None for exercises that aren't in the glossary (e.g. an AI-planned movement
     # with no exact match) — the set is still logged by name, just without PR tracking.

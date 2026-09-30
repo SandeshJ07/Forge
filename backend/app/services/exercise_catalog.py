@@ -521,7 +521,15 @@ TRACKING_OVERRIDES: dict[str, str] = {
     "Wide-Grip Rear Pull-Up": "weighted_bodyweight",
     "Pull-Up (Band-Assisted)": "bodyweight_reps",
     "Assisted Dip (Machine)": "weight_reps",
+    # Hand-added rows in production with the same names as ours / a generic warm-up entry.
+    "Warm Up": "duration",
 }
+
+# Movements that sit in the dataset's "stretching" category but are done for reps, not held.
+_DYNAMIC_STRETCH = re.compile(
+    r"squat|lunge|circle|leg raise|shoulder raise|kick|swing|pelvic tilt|bridge|walk", re.IGNORECASE
+)
+_NEW_TRACKING = {exercise["name"].lower(): exercise["tracking_type"] for exercise in NEW_EXERCISES}
 
 _BODYWEIGHT_OTHER = re.compile(
     r"chin|pull-?up|muscle up|suspended|inverted row|rope climb|parallel bars|london bridges|"
@@ -535,6 +543,11 @@ def tracking_for(name: str, category: str | None, equipment: str | None) -> str:
     """How an exercise is logged. Rules first by override, then by dataset category and equipment."""
     if name in TRACKING_OVERRIDES:
         return TRACKING_OVERRIDES[name]
+    # Our own additions win even over a same-named row that came from elsewhere (e.g. added by hand).
+    if name.lower() in _NEW_TRACKING:
+        return _NEW_TRACKING[name.lower()]
+    if category == "stretching" and _DYNAMIC_STRETCH.search(name):
+        return "bodyweight_reps"
     if category == "stretching" or equipment == "foam roll":
         return "duration"
     if category == "cardio":
@@ -580,9 +593,40 @@ def apply_catalog(conn) -> None:
             exercise,
         )
 
-    rows = conn.execute(text("SELECT id, name, category, equipment FROM exercises WHERE source <> 'forge'")).all()
-    for exercise_id, name, category, equipment in rows:
-        conn.execute(
-            text("UPDATE exercises SET tracking_type = :t WHERE id = :id"),
-            {"t": tracking_for(name, category, equipment), "id": exercise_id},
-        )
+    rows = conn.execute(
+        text("SELECT id, name, category, equipment, tracking_type FROM exercises WHERE source <> 'forge'")
+    ).all()
+    for exercise_id, name, category, equipment, current in rows:
+        wanted = tracking_for(name, category, equipment)
+        if wanted != current:  # one round trip per change, not per row — matters on a remote database
+            conn.execute(
+                text("UPDATE exercises SET tracking_type = :t WHERE id = :id"), {"t": wanted, "id": exercise_id}
+            )
+
+
+def sync_plan_tracking(conn) -> None:
+    """
+    Saved plans copy each exercise's tracking type when they're generated; after
+    a catalog fix, bring those copies in line with the exercises they link to.
+    """
+    import json
+
+    from sqlalchemy import text
+
+    tracking = {str(r[0]): r[1] for r in conn.execute(text("SELECT id, tracking_type FROM exercises"))}
+    for plan_id, plan in conn.execute(text("SELECT id, plan FROM generated_plans")).all():
+        changed = False
+        for group in (plan or {}).get("groups") or []:
+            for key in ("warmup", "exercises"):
+                for exercise in group.get(key) or []:
+                    if not isinstance(exercise, dict):
+                        continue
+                    wanted = tracking.get(str(exercise.get("exercise_id")))
+                    if wanted and exercise.get("tracking") != wanted:
+                        exercise["tracking"] = wanted
+                        changed = True
+        if changed:
+            conn.execute(
+                text("UPDATE generated_plans SET plan = CAST(:plan AS jsonb) WHERE id = :id"),
+                {"plan": json.dumps(plan), "id": plan_id},
+            )

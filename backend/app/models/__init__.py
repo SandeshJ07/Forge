@@ -6,6 +6,7 @@ from app.models.measurement import Measurement, ProgressPhoto
 from app.models.personal_record import PersonalRecord
 from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
+from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.models.workout import Workout, WorkoutSet
 
@@ -20,6 +21,7 @@ __all__ = [
     "PersonalRecord",
     "GeneratedPlan",
     "UserProfile",
+    "PushSubscription",
     "User",
     "Workout",
     "WorkoutSet",

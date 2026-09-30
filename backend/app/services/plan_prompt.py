@@ -61,6 +61,19 @@ class PlanGenerationInput:
     plan_equipment: list[str] | None = None
     session_minutes: int | None = None
     notes: str | None = None
+    # One of SPLIT_DESCRIPTIONS' keys; None = the AI picks.
+    split: str | None = None
+
+
+SPLIT_DESCRIPTIONS = {
+    "full_body": "Full body — every session trains the whole body (a squat or hinge, a push, a pull, plus core)",
+    "upper_lower": "Upper / Lower — alternate upper-body sessions (chest, back, shoulders, arms) and lower-body "
+    "sessions (quads, hamstrings, glutes, calves, core)",
+    "push_pull_legs": "Push / Pull / Legs — push (chest, shoulders, triceps), pull (back, rear delts, biceps) and "
+    "legs (quads, hamstrings, glutes, calves) sessions",
+    "arnold": "Arnold split — chest + back, shoulders + arms, and legs sessions",
+    "body_part": "Body-part split — one or two main muscle groups per session (e.g. chest, back, legs, shoulders, arms)",
+}
 
 
 def _goals_line(goals: list[str]) -> str:
@@ -75,6 +88,11 @@ def _goals_line(goals: list[str]) -> str:
 def _build_preferences_section(data: "PlanGenerationInput") -> tuple[str, str]:
     """Returns (preferences section, day-count instruction). Empty section when the athlete left it all to the AI."""
     lines = []
+    if data.split in SPLIT_DESCRIPTIONS:
+        lines.append(
+            f"- Split: {SPLIT_DESCRIPTIONS[data.split]}. Build the groups on this split and name them after it "
+            '(e.g. "Push", "Upper A"). Muscles the athlete picked for a specific day below still take priority on that day.'
+        )
     if data.training_days:
         names = ", ".join(WEEKDAY_NAMES[d] for d in data.training_days)
         lines.append(f"- Training days (use exactly these, no others): {names}")

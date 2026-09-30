@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -13,7 +14,10 @@ from app.schemas.workout import (
     LogManualWorkoutRequest,
     LogManualWorkoutResponse,
     RateWorkoutRequest,
+    WorkoutDetailExercise,
+    WorkoutDetailResponse,
     WorkoutResponse,
+    WorkoutSessionPR,
     WorkoutSetResponse,
 )
 from app.services.personal_records import SetCandidate, update_personal_records
@@ -50,6 +54,86 @@ def get_workout_sets(
         .filter(WorkoutSet.workout_id == workout_id)
         .order_by(WorkoutSet.set_index)
         .all()
+    )
+
+
+@router.get("/{workout_id}/detail", response_model=WorkoutDetailResponse)
+def get_workout_detail(
+    workout_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> WorkoutDetailResponse:
+    """
+    One logged workout for its details page: sets grouped by exercise (in the
+    order performed), the muscles worked, and the exercises where this session
+    set a personal record — a heavier weight than any earlier workout had.
+    """
+    workout = db.get(Workout, workout_id)
+    if workout is None or workout.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found")
+
+    sets = db.query(WorkoutSet).filter(WorkoutSet.workout_id == workout_id).order_by(WorkoutSet.set_index).all()
+    exercise_ids = {s.exercise_id for s in sets if s.exercise_id}
+    exercises = {e.id: e for e in db.query(Exercise).filter(Exercise.id.in_(exercise_ids)).all()} if exercise_ids else {}
+
+    # Best weight per exercise in this user's earlier workouts: a heavier set today is a session PR.
+    previous_best: dict[UUID, float] = {}
+    if exercise_ids:
+        rows = (
+            db.query(WorkoutSet.exercise_id, func.max(WorkoutSet.weight_kg))
+            .join(Workout, Workout.id == WorkoutSet.workout_id)
+            .filter(
+                Workout.user_id == current_user.id,
+                Workout.date < workout.date,
+                WorkoutSet.exercise_id.in_(exercise_ids),
+                WorkoutSet.weight_kg.is_not(None),
+            )
+            .group_by(WorkoutSet.exercise_id)
+            .all()
+        )
+        previous_best = {exercise_id: float(best) for exercise_id, best in rows}
+
+    groups: dict[str, WorkoutDetailExercise] = {}
+    for s in sets:
+        key = str(s.exercise_id) if s.exercise_id else f"name:{(s.exercise_name_raw or '').lower()}"
+        if key not in groups:
+            exercise = exercises.get(s.exercise_id) if s.exercise_id else None
+            groups[key] = WorkoutDetailExercise(
+                exercise_id=s.exercise_id,
+                name=exercise.name if exercise else (s.exercise_name_raw or "Exercise"),
+                tracking_type=exercise.tracking_type if exercise else None,
+                muscle_groups=exercise.muscle_groups if exercise else [],
+                secondary_muscle_groups=exercise.secondary_muscle_groups or [] if exercise else [],
+                sets=[],
+            )
+        groups[key].sets.append(WorkoutSetResponse.model_validate(s))
+
+    prs: list[WorkoutSessionPR] = []
+    for group in groups.values():
+        weights = [float(s.weight_kg) for s in group.sets if s.weight_kg is not None]
+        if not group.exercise_id or not weights:
+            continue
+        best = max(weights)
+        before = previous_best.get(group.exercise_id)
+        if before is None or best > before:
+            best_set = max((s for s in group.sets if s.weight_kg is not None), key=lambda s: (float(s.weight_kg), s.reps or 0))
+            group.is_pr = True
+            prs.append(
+                WorkoutSessionPR(
+                    exercise_id=group.exercise_id,
+                    name=group.name,
+                    weight_kg=best,
+                    reps=best_set.reps,
+                    previous_best_kg=before,
+                )
+            )
+
+    primary = list(dict.fromkeys(m for g in groups.values() for m in g.muscle_groups))
+    secondary = [m for m in dict.fromkeys(m for g in groups.values() for m in g.secondary_muscle_groups) if m not in primary]
+    return WorkoutDetailResponse(
+        workout=WorkoutResponse.model_validate(workout),
+        exercises=list(groups.values()),
+        primary_muscles=primary,
+        secondary_muscles=secondary,
+        personal_records=prs,
     )
 
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
@@ -43,7 +43,12 @@ export default function LogScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <Card style={styles.workoutCard}>
-            <View style={styles.workoutHead}>
+            <Pressable
+              onPress={() => router.push(`/workout/${item.id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.title ?? 'Workout'}, ${formatDayTime(item.date)}. View details`}
+              style={({ pressed }) => [styles.workoutHead, pressed && styles.pressed]}
+            >
               <View style={styles.flex}>
                 <Text style={styles.workoutTitle}>{item.title ?? 'Workout'}</Text>
                 <Text style={styles.workoutMeta}>
@@ -51,7 +56,9 @@ export default function LogScreen() {
                   {shortSummary(item.summary) ? ` · ${shortSummary(item.summary)}` : ''}
                 </Text>
               </View>
-            </View>
+              <Text style={styles.detailsLink}>Details</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            </Pressable>
             <WorkoutFeedbackControl workout={item} />
           </Card>
         )}
@@ -119,6 +126,16 @@ const styles = StyleSheet.create({
   workoutHead: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    cursor: 'pointer',
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  detailsLink: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
   },
   workoutTitle: {
     color: colors.text,

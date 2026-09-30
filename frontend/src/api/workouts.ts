@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/apiClient';
-import type { Workout, WorkoutSet } from '@/types/database';
+import type { Workout, WorkoutDetail, WorkoutSet } from '@/types/database';
 
 export interface ManualWorkoutInput {
   title: string;
@@ -60,6 +60,11 @@ export async function fetchRecentWorkouts(limit = 50): Promise<Workout[]> {
 export async function fetchWorkoutsBetween(start: Date, end: Date): Promise<Workout[]> {
   const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '1000' });
   return apiClient.get<Workout[]>(`/workouts?${params}`);
+}
+
+/** One workout for its details page: exercises with sets, muscles worked and session PRs. */
+export async function fetchWorkoutDetail(workoutId: string): Promise<WorkoutDetail> {
+  return apiClient.get<WorkoutDetail>(`/workouts/${workoutId}/detail`);
 }
 
 export async function fetchWorkoutSets(workoutId: string): Promise<WorkoutSet[]> {

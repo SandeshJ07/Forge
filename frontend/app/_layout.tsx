@@ -127,6 +127,10 @@ function RootNavigation() {
             name="workout/new"
             options={{ headerShown: true, title: 'Log workout', headerLeft: () => <HeaderBackButton fallback="/log" /> }}
           />
+          <Stack.Screen
+            name="workout/[id]"
+            options={{ headerShown: true, title: 'Workout', headerLeft: () => <HeaderBackButton fallback="/log" /> }}
+          />
         </Stack>
         {/* Background plan generation status, over every signed-in screen. */}
         {session && isOnboarded && !inAuthGroup && !inOnboarding ? (

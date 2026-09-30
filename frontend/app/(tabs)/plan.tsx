@@ -7,6 +7,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
+import { PlanSectionSwitch } from '@/components/PlanSectionSwitch';
 import { useLatestPlan, usePendingPlan, usePlanGeneration } from '@/hooks/usePlans';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { daysUntilPlanRefresh, isPlanRefreshDue, refreshIntervalDays, refreshPeriodText } from '@/lib/planRefresh';
@@ -83,6 +84,7 @@ export default function ExerciseGroupsScreen() {
           ) : null
         }
       />
+      <PlanSectionSwitch active="workouts" />
 
       {chooserOpen && latestPlan && !isGenerating ? (
         <Card style={styles.chooserCard}>
@@ -190,14 +192,6 @@ export default function ExerciseGroupsScreen() {
           </View>
         </>
       ) : null}
-      <View style={styles.dietEntry}>
-        <PlanOption
-          icon="nutrition-outline"
-          title="Diet plan"
-          subtitle="Meals built around your goals, diet and budget. Uses your own AI key."
-          onPress={() => router.push('/diet')}
-        />
-      </View>
     </ScreenContainer>
   );
 }
@@ -253,9 +247,6 @@ function PlanOption({
 }
 
 const styles = StyleSheet.create({
-  dietEntry: {
-    marginTop: spacing.sm,
-  },
   chooserCard: {
     gap: spacing.sm,
     borderColor: colors.primaryMuted,
