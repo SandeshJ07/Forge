@@ -62,4 +62,4 @@ class DietAccess(BaseModel):
     """Diet plans need the user's own AI key. provider is the one that would be used (None when no key)."""
 
     available: bool
-    provider: Literal["anthropic", "gemini", "grok"] | None
+    provider: Literal["anthropic", "gemini", "groq"] | None

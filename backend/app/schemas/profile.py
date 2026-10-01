@@ -20,7 +20,7 @@ class UserProfileResponse(BaseModel):
     ai_provider: str
     anthropic_api_key_set: bool
     gemini_api_key_set: bool
-    grok_api_key_set: bool = False
+    groq_api_key_set: bool = False
     include_warmup: bool
     plan_refresh_cadence: str
     plan_refresh_days: int | None = None
@@ -45,7 +45,7 @@ class UserProfileUpdate(BaseModel):
     experience_level: str | None = None
     equipment_access: list[str] | None = None
     unit_system: str | None = None
-    ai_provider: Literal["anthropic", "gemini", "grok"] | None = None
+    ai_provider: Literal["anthropic", "gemini", "groq"] | None = None
     include_warmup: bool | None = None
     # "custom" reminds every plan_refresh_days days (1-365).
     plan_refresh_cadence: Literal["monthly", "custom"] | None = None

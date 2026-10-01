@@ -12,7 +12,7 @@ Try it on the web at **[forge-bro.vercel.app](https://forge-bro.vercel.app)**, a
 - Tell Forge **which days you can train**, **which muscles to hit each day**, the **equipment you have**, how long a session can be, and anything else it should know ("sore left knee, no jumping").
 - An AI coach (Google Gemini or Anthropic Claude) turns that — plus your goals, experience and training history — into **workout groups** like *Push*, *Pull* and *Legs*, each mapped to your training days, with sets, reps, rest times and optional warm-ups.
 - Pick **up to two goals** (strength, building muscle, general fitness, endurance); the first one is your main focus.
-- Plans are free to generate up to **5 times a day**. Add your own Claude, Gemini or Grok API key in Settings for unlimited use.
+- Plans are free to generate up to **5 times a day**. Add your own Claude, Gemini or Groq API key in Settings for unlimited use.
 - Forge reminds you when it's time for a fresh plan (weekly, every two weeks or monthly), and keeps your past plans.
 
 ### Log workouts without the fuss

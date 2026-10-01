@@ -25,11 +25,11 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
     keyHelp: 'Create a key at aistudio.google.com → Get API key.',
   },
   {
-    value: 'grok',
-    name: 'Grok',
-    company: 'xAI',
-    keyPlaceholder: 'xai-…',
-    keyHelp: 'Create a key at console.x.ai → API Keys.',
+    value: 'groq',
+    name: 'Groq',
+    company: 'GroqCloud',
+    keyPlaceholder: 'gsk_…',
+    keyHelp: 'Create a key at console.groq.com → API Keys.',
   },
 ];
 

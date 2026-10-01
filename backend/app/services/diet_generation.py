@@ -249,7 +249,7 @@ async def generate_diet_plan(db: Session, user_id: UUID, preferences: dict) -> t
     """Returns (plan_json, provider, model). Raises NoOwnAIKey, DietPlanParseError or AIRequestError."""
     key = resolve_own_key(db, user_id)
     if key is None:
-        raise NoOwnAIKey("Diet plans need your own Claude, Gemini or Grok API key. Add one in Settings.")
+        raise NoOwnAIKey("Diet plans need your own Claude, Gemini or Groq API key. Add one in Settings.")
     prompt = build_diet_prompt(db, user_id, preferences)
     # 7 days x up to 6 meals, plus targets, shopping list and tips.
     text, model = await generate_text(key.provider, key.api_key, prompt, max_tokens=12000)

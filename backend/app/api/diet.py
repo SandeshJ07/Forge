@@ -83,7 +83,7 @@ async def generate(
     if resolve_own_key(db, current_user.id) is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Diet plans need your own Claude, Gemini or Grok API key. Add one in Settings.",
+            detail="Diet plans need your own Claude, Gemini or Groq API key. Add one in Settings.",
         )
 
     _latest_job(db, current_user.id)  # expires stale jobs (commits)

@@ -49,7 +49,7 @@ export default function DietPlanScreen() {
           <View style={styles.flex}>
             <Text style={styles.cardTitle}>Diet plans use your own AI key</Text>
             <Text style={styles.mutedText}>
-              Add your Claude, Gemini or Grok API key in Settings to create a diet plan. It's billed to your own account — the
+              Add your Claude, Gemini or Groq API key in Settings to create a diet plan. It's billed to your own account — the
               app's shared key only covers workout plans.
             </Text>
             <View style={styles.actions}>
