@@ -22,10 +22,7 @@ def _profile(db: Session, user_id) -> UserProfile:
 
 
 def _set_flag(profile: UserProfile, provider: AIProvider, value: bool) -> None:
-    if provider == "anthropic":
-        profile.anthropic_api_key_set = value
-    else:
-        profile.gemini_api_key_set = value
+    setattr(profile, f"{provider}_api_key_set", value)
 
 
 @router.put("/{provider}", response_model=AIKeyStatusResponse)

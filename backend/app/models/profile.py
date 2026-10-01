@@ -32,7 +32,7 @@ class UserProfile(Base):
             "plan_refresh_cadence <> 'custom' OR plan_refresh_days BETWEEN 1 AND 365",
             name="user_profiles_plan_refresh_days_check",
         ),
-        CheckConstraint("ai_provider in ('anthropic','gemini')", name="user_profiles_ai_provider_check"),
+        CheckConstraint("ai_provider in ('anthropic','gemini','grok')", name="user_profiles_ai_provider_check"),
         CheckConstraint(
             "gym_reminder_time IS NULL OR gym_reminder_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
             name="user_profiles_gym_reminder_time_check",
@@ -51,6 +51,7 @@ class UserProfile(Base):
     gemini_api_key_set: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    grok_api_key_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     include_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # "monthly" (every 30 days) or "custom" (every plan_refresh_days days).
     plan_refresh_cadence: Mapped[str] = mapped_column(String, nullable=False, default="monthly")

@@ -18,7 +18,14 @@ from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.workout import Workout, WorkoutSet
 from app.services.equipment_catalog import display_names, glossary_equipment
-from app.services.ai_providers import PROVIDER_NAMES, AIProvider, generate_text, shared_key_for
+from app.services.ai_providers import (
+    PROVIDER_NAMES,
+    PROVIDERS,
+    AIProvider,
+    generate_text,
+    provider_or_default,
+    shared_key_for,
+)
 from app.services.plan_prompt import PersonalRecordSummary, PlanGenerationInput, build_plan_prompt
 from app.services.plan_summarize import summarize_workout_history
 
@@ -70,17 +77,16 @@ class AIAccess:
 def resolve_ai_access(db: Session, user_id: UUID) -> AIAccess:
     """
     The user's own key for their chosen provider if they've added one; else the
-    server's shared key for it; else the shared key of the other provider, so
+    server's shared key for it; else a shared key of another provider, so
     users who never picked a provider still work with whichever key the server has.
     """
     profile = db.get(UserProfile, user_id)
-    provider: AIProvider = profile.ai_provider if profile and profile.ai_provider in ("anthropic", "gemini") else "anthropic"
+    provider = provider_or_default(profile.ai_provider if profile else None)
     token = db.get(IntegrationToken, (user_id, provider))
     if token is not None:
         return AIAccess(provider, token.access_token, own_key=True)
     if settings.shared_key_daily_plan_limit > 0:
-        other: AIProvider = "gemini" if provider == "anthropic" else "anthropic"
-        for candidate in (provider, other):
+        for candidate in (provider, *(p for p in PROVIDERS if p != provider)):
             if shared_key_for(candidate):
                 return AIAccess(candidate, shared_key_for(candidate), own_key=False)
     return AIAccess(provider, None, own_key=False)

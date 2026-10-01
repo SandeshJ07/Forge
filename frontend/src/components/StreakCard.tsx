@@ -26,8 +26,22 @@ function levelFor(count: number): number {
  * Weekly streak (counted over all of workoutDates) plus a calendar of one
  * month — the current one unless `month` (any date in it) is given.
  */
-export function StreakCard({ workoutDates, month }: { workoutDates: string[]; month?: Date }) {
-  const [selected, setSelected] = useState<Date | null>(null);
+export function StreakCard({
+  workoutDates,
+  month,
+  selectedDay,
+  onSelectDay,
+}: {
+  workoutDates: string[];
+  month?: Date;
+  /** Controlled selection (e.g. the Log screen filters its list by it); omit both to let the card manage its own. */
+  selectedDay?: Date | null;
+  onSelectDay?: (day: Date | null) => void;
+}) {
+  const [ownSelected, setOwnSelected] = useState<Date | null>(null);
+  const controlled = onSelectDay !== undefined;
+  const selected = controlled ? (selectedDay ?? null) : ownSelected;
+  const setSelected = controlled ? onSelectDay : setOwnSelected;
 
   const today = startOfDay(new Date());
   const summary = useMemo(() => summarizeStreak(workoutDates), [workoutDates]);

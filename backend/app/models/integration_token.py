@@ -12,14 +12,14 @@ from app.core.encrypted_types import EncryptedString
 class IntegrationToken(Base):
     """
     Holds secrets that must never reach the client (currently just the
-    user's optional Anthropic / Gemini API keys). Deliberately has no corresponding
+    user's optional Anthropic / Gemini / Grok API keys). Deliberately has no corresponding
     Pydantic response schema that includes access_token — only this
     backend's own services read it.
     """
 
     __tablename__ = "integration_tokens"
     __table_args__ = (
-        CheckConstraint("provider in ('anthropic', 'gemini')", name="integration_tokens_provider_check"),
+        CheckConstraint("provider in ('anthropic', 'gemini', 'grok')", name="integration_tokens_provider_check"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(

@@ -4,7 +4,7 @@ import { queryClient } from '@/lib/queryClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 /**
- * A small on-device copy of the queries behind Home, Plan and Settings, so a
+ * A small on-device copy of the queries behind Home, Plan, Diet and Settings, so a
  * cold start (or a sleeping backend on Render's free plan) shows the last
  * known data at once while fresh data loads in the background. Queries past
  * the client's staleTime refetch on mount as usual; this only fills the gap.
@@ -25,8 +25,10 @@ const PERSISTED_QUERIES = new Set([
   // Plan
   'latest-plan',
   'pending-plan',
+  // Diet (Plan tab switch, Home's "Today's meals", the diet form)
   'latest-diet-plan',
   'diet-access', // the diet screen waits on this before showing the plan
+  'diet-preferences', // pre-fills the diet form
   // Settings / profile (also gates onboarding routing)
   'user-profile',
 ]);

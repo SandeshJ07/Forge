@@ -10,7 +10,7 @@ import { WorkoutFeedbackControl } from '@/components/WorkoutFeedbackControl';
 import { StreakCard } from '@/components/StreakCard';
 import { MonthPicker, startOfMonth } from '@/components/MonthPicker';
 import { useWorkoutHistory, useWorkoutsInMonth } from '@/hooks/useWorkouts';
-import { formatDayTime } from '@/lib/format';
+import { formatDay, formatDayTime } from '@/lib/format';
 import { colors, spacing } from '@/constants/theme';
 
 /** Backend summaries read "3 sets logged manually" — every workout is manual, so drop the noise. */
@@ -21,12 +21,26 @@ function shortSummary(summary: string | null): string | null {
 export default function LogScreen() {
   const router = useRouter();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
-  const { data: workouts, isLoading } = useWorkoutsInMonth(month);
+  // A day tapped in the calendar narrows the list to that day; tapping it again shows the whole month.
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const { data: monthWorkouts, isLoading } = useWorkoutsInMonth(month);
+  const workouts = useMemo(
+    () =>
+      selectedDay
+        ? (monthWorkouts ?? []).filter((w) => new Date(w.date).toDateString() === selectedDay.toDateString())
+        : monthWorkouts,
+    [monthWorkouts, selectedDay]
+  );
+
+  function changeMonth(next: Date) {
+    setSelectedDay(null);
+    setMonth(next);
+  }
   // The streak counts across all history; the calendar shows the chosen month.
   const { data: history } = useWorkoutHistory();
   const workoutDates = useMemo(
-    () => [...new Set([...(history ?? []), ...(workouts ?? [])].map((w) => w.date))],
-    [history, workouts]
+    () => [...new Set([...(history ?? []), ...(monthWorkouts ?? [])].map((w) => w.date))],
+    [history, monthWorkouts]
   );
   const monthName = month.toLocaleDateString(undefined, { month: 'long' });
 
@@ -64,10 +78,25 @@ export default function LogScreen() {
         )}
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            <MonthPicker month={month} onChange={setMonth} />
-            {/* Keyed by month so a day tapped in one month doesn't stay selected in the next. */}
-            <StreakCard key={month.getTime()} workoutDates={workoutDates} month={month} />
-            {workouts?.length ? (
+            <MonthPicker month={month} onChange={changeMonth} />
+            <StreakCard
+              workoutDates={workoutDates}
+              month={month}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+            />
+            {selectedDay ? (
+              <View style={styles.filterRow}>
+                <Text style={[styles.sectionTitle, styles.flex]}>
+                  {workouts?.length
+                    ? `${workouts.length} workout${workouts.length === 1 ? '' : 's'} on ${formatDay(selectedDay)}`
+                    : formatDay(selectedDay)}
+                </Text>
+                <Text style={styles.detailsLink} onPress={() => setSelectedDay(null)} accessibilityRole="button">
+                  Show all of {monthName}
+                </Text>
+              </View>
+            ) : workouts?.length ? (
               <Text style={styles.sectionTitle}>
                 {workouts.length} workout{workouts.length === 1 ? '' : 's'} in {monthName}
               </Text>
@@ -78,7 +107,12 @@ export default function LogScreen() {
           !isLoading ? (
             <Card style={styles.emptyCard}>
               <Ionicons name="barbell-outline" size={32} color={colors.textMuted} />
-              {history?.length ? (
+              {selectedDay ? (
+                <>
+                  <Text style={styles.emptyTitle}>Rest day</Text>
+                  <Text style={styles.emptyText}>No workouts on {formatDay(selectedDay)}. Tap the day again to see the whole month.</Text>
+                </>
+              ) : history?.length ? (
                 <>
                   <Text style={styles.emptyTitle}>No workouts in {monthName}</Text>
                   <Text style={styles.emptyText}>Pick another month above to see those sessions.</Text>
@@ -107,6 +141,11 @@ const styles = StyleSheet.create({
   listHeader: {
     gap: spacing.md,
     marginBottom: spacing.xs,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   sectionTitle: {
     color: colors.text,

@@ -23,12 +23,16 @@ export function useDietAccess() {
   });
 }
 
+/** Only changes when a new plan is generated, which refreshes it (useDietGeneration) — so keep the cached copy longer. */
+const DIET_STALE_MS = 30 * 60 * 1000;
+
 export function useLatestDietPlan() {
   const userId = useAuthStore((s) => s.session?.userId);
   return useQuery({
     queryKey: ['latest-diet-plan', userId],
     queryFn: fetchLatestDietPlan,
     enabled: Boolean(userId),
+    staleTime: DIET_STALE_MS,
   });
 }
 
@@ -38,6 +42,7 @@ export function useLastDietPreferences() {
     queryKey: ['diet-preferences', userId],
     queryFn: fetchLastDietPreferences,
     enabled: Boolean(userId),
+    staleTime: DIET_STALE_MS,
   });
 }
 

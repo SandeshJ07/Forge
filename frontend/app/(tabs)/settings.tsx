@@ -113,7 +113,7 @@ export default function SettingsScreen() {
   }
 
   const provider = providerInfo(profile?.ai_provider);
-  const hasOwnKey = provider.value === 'gemini' ? profile?.gemini_api_key_set : profile?.anthropic_api_key_set;
+  const hasOwnKey = profile ? profile[`${provider.value}_api_key_set`] : false;
   const { data: usage } = usePlanUsage();
   // Adding, removing or switching keys changes whether the daily limit applies.
   const refreshUsage = () => queryClient.invalidateQueries({ queryKey: ['plan-usage'] });

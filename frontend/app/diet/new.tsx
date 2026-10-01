@@ -108,7 +108,7 @@ export default function DietPreferencesScreen() {
         <Card style={styles.errorCard}>
           <Ionicons name="key-outline" size={18} color={colors.warning} />
           <Text style={styles.errorText}>
-            Diet plans need your own Gemini or Claude API key.{' '}
+            Diet plans need your own Claude, Gemini or Grok API key.{' '}
             <Text style={styles.link} onPress={() => router.push('/settings')} accessibilityRole="link">
               Add one in Settings
             </Text>

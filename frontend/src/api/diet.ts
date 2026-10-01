@@ -1,7 +1,7 @@
 import { apiClient } from '@/lib/apiClient';
 import type { DietAccess, DietGenerationStatus, DietPlan, DietPreferences } from '@/types/database';
 
-/** Whether the user can make diet plans — they need their own Gemini or Claude key. */
+/** Whether the user can make diet plans — they need their own Claude, Gemini or Grok key. */
 export async function fetchDietAccess(): Promise<DietAccess> {
   return apiClient.get<DietAccess>('/diet-plans/access');
 }

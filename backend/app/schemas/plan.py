@@ -87,7 +87,7 @@ class PlanUsage(BaseModel):
     """Today's plan generations on the app's shared AI key. Users with their own key have no limit."""
 
     own_key: bool
-    provider: Literal["anthropic", "gemini"]
+    provider: Literal["anthropic", "gemini", "grok"]
     # None when own_key (unlimited).
     limit: int | None
     used: int

@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Tried in order when the main Gemini model is overloaded / rate-limited /
     # retired. Comma-separated; set empty to disable fallback.
     gemini_fallback_models: str = "gemini-3.7-flash,gemini-3.5-flash-lite"
+    # xAI Grok (OpenAI-compatible API at api.x.ai). Same fallback idea as Gemini.
+    grok_api_key: str | None = None
+    grok_model: str = "grok-4.7"
+    grok_fallback_models: str = "grok-4.3"
     # Plan generations per user per day (user's local calendar day) on the shared
     # keys above. Users with their own key aren't limited. 0 disables the shared keys.
     shared_key_daily_plan_limit: int = 5
@@ -77,7 +81,7 @@ class Settings(BaseSettings):
     # few minutes from a cron (it also wakes a sleeping free-tier server). Empty = disabled.
     reminder_cron_secret: str = ""
 
-    @field_validator("anthropic_api_key", "gemini_api_key", mode="before")
+    @field_validator("anthropic_api_key", "gemini_api_key", "grok_api_key", mode="before")
     @classmethod
     def _placeholder_means_unset(cls, value: str | None) -> str | None:
         # .env.example ships "your-anthropic-api-key"; a copied-but-unedited .env must not
@@ -105,6 +109,11 @@ class Settings(BaseSettings):
     def gemini_model_chain(self) -> list[str]:
         fallbacks = [m.strip() for m in self.gemini_fallback_models.split(",") if m.strip()]
         return list(dict.fromkeys([self.gemini_model, *fallbacks]))  # dedupe, keep order
+
+    @property
+    def grok_model_chain(self) -> list[str]:
+        fallbacks = [m.strip() for m in self.grok_fallback_models.split(",") if m.strip()]
+        return list(dict.fromkeys([self.grok_model, *fallbacks]))
 
     @property
     def google_client_id_list(self) -> list[str]:

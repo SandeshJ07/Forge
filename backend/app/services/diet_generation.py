@@ -15,7 +15,7 @@ from app.models.integration_token import IntegrationToken
 from app.models.measurement import Measurement
 from app.models.profile import UserProfile
 from app.models.workout import Workout
-from app.services.ai_providers import AIProvider, generate_text
+from app.services.ai_providers import PROVIDERS, AIProvider, generate_text, provider_or_default
 
 
 class NoOwnAIKey(Exception):
@@ -33,11 +33,10 @@ class OwnKey:
 
 
 def resolve_own_key(db: Session, user_id: UUID) -> OwnKey | None:
-    """The user's key for their chosen provider, else their key for the other one; None if they've added neither."""
+    """The user's key for their chosen provider, else any other key they've added; None if they've added none."""
     profile = db.get(UserProfile, user_id)
-    chosen: AIProvider = profile.ai_provider if profile and profile.ai_provider in ("anthropic", "gemini") else "anthropic"
-    other: AIProvider = "gemini" if chosen == "anthropic" else "anthropic"
-    for provider in (chosen, other):
+    chosen = provider_or_default(profile.ai_provider if profile else None)
+    for provider in (chosen, *(p for p in PROVIDERS if p != chosen)):
         token = db.get(IntegrationToken, (user_id, provider))
         if token is not None:
             return OwnKey(provider, token.access_token)
@@ -250,7 +249,7 @@ async def generate_diet_plan(db: Session, user_id: UUID, preferences: dict) -> t
     """Returns (plan_json, provider, model). Raises NoOwnAIKey, DietPlanParseError or AIRequestError."""
     key = resolve_own_key(db, user_id)
     if key is None:
-        raise NoOwnAIKey("Diet plans need your own Gemini or Claude API key. Add one in Settings.")
+        raise NoOwnAIKey("Diet plans need your own Claude, Gemini or Grok API key. Add one in Settings.")
     prompt = build_diet_prompt(db, user_id, preferences)
     # 7 days x up to 6 meals, plus targets, shopping list and tips.
     text, model = await generate_text(key.provider, key.api_key, prompt, max_tokens=12000)

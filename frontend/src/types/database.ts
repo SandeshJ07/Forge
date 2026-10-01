@@ -6,7 +6,7 @@ export type ExerciseFeedbackRating = 'like' | 'dislike' | 'neutral';
 export type Goal = 'strength' | 'hypertrophy' | 'general_fitness' | 'endurance' | 'weight_loss';
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 export type UnitSystem = 'metric' | 'imperial';
-export type AIProvider = 'anthropic' | 'gemini';
+export type AIProvider = 'anthropic' | 'gemini' | 'grok';
 export type IntegrationProvider = AIProvider;
 /** How an exercise is logged — see backend/app/services/exercise_catalog.py. */
 export type TrackingType =
@@ -224,6 +224,7 @@ export interface UserProfile {
   ai_provider: AIProvider;
   anthropic_api_key_set: boolean;
   gemini_api_key_set: boolean;
+  grok_api_key_set: boolean;
   include_warmup: boolean;
   plan_refresh_cadence: PlanRefreshCadence;
   /** Days between reminders when the cadence is "custom" (1-365). */
