@@ -107,8 +107,9 @@ export function StreakCard({
                 <Pressable
                   key={d}
                   disabled={isFuture}
+                  // Only a tap selects (and a second tap clears) — no hover, which on desktop
+                  // re-filtered the Log as the pointer moved and made the next click deselect.
                   onPress={() => setSelected(isSelected ? null : day)}
-                  onHoverIn={() => setSelected(day)}
                   accessibilityLabel={`${formatDay(day)}: ${count} workout${count === 1 ? '' : 's'}`}
                   style={[
                     styles.cellSlot,
