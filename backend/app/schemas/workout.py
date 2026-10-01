@@ -4,6 +4,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class WorkoutRunInfo(BaseModel):
+    """For GPS-recorded workouts: the headline numbers, and (when asked for) a small route outline."""
+
+    activity: str
+    distance_m: float
+    moving_seconds: int
+    elevation_gain_m: float
+    # [[lat, lng], ...], ~60 points; only when the list was requested with route_previews=true.
+    preview: list[list[float]] | None = None
+
+
 class WorkoutResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -20,6 +31,8 @@ class WorkoutResponse(BaseModel):
     enjoyed: bool | None
     notes: str | None
     created_at: datetime
+    # Set for GPS-recorded runs / walks / rides.
+    run: WorkoutRunInfo | None = None
 
 
 class WorkoutSetResponse(BaseModel):

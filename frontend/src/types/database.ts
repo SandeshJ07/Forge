@@ -74,6 +74,34 @@ export interface Workout {
   enjoyed: boolean | null;
   notes: string | null;
   created_at: string;
+  /** Set for GPS-recorded runs / walks / rides. */
+  run?: WorkoutRunInfo | null;
+}
+
+export interface WorkoutRunInfo {
+  activity: 'run' | 'walk' | 'ride';
+  distance_m: number;
+  moving_seconds: number;
+  elevation_gain_m: number;
+  /** [[lat, lng], ...] outline; only in lists fetched with route previews. */
+  preview?: number[][] | null;
+}
+
+/** GET /runs/{workout_id} */
+export interface RunRoute {
+  workout_id: string;
+  activity: 'run' | 'walk' | 'ride';
+  distance_m: number;
+  moving_seconds: number;
+  elapsed_seconds: number;
+  elevation_gain_m: number;
+  max_speed_mps: number;
+  /** [[lat, lng], ...] per recording segment. */
+  segments: number[][][];
+  /** The last split may be a partial kilometre. */
+  splits: { km: number; distance_m: number; seconds: number }[];
+  /** [[distance_m, altitude_m], ...] */
+  elevation_profile: number[][];
 }
 
 export interface WorkoutSet {

@@ -16,7 +16,7 @@ export interface NavItem {
 /** Single source of truth for nav order + labels, shared by the phone tab bar and the desktop sidebar. */
 export const NAV_ITEMS: NavItem[] = [
   { name: 'index', title: 'Home', href: '/', icon: 'home-outline', iconActive: 'home', matches: ['/records'] },
-  { name: 'log', title: 'Log', href: '/log', icon: 'barbell-outline', iconActive: 'barbell', matches: ['/workout'] },
+  { name: 'log', title: 'Log', href: '/log', icon: 'barbell-outline', iconActive: 'barbell', matches: ['/workout', '/run'] },
   { name: 'plan', title: 'Plan', href: '/plan', icon: 'calendar-outline', iconActive: 'calendar', matches: ['/diet'] },
   {
     name: 'measurements',

@@ -17,9 +17,11 @@ from app.schemas.workout import (
     WorkoutDetailExercise,
     WorkoutDetailResponse,
     WorkoutResponse,
+    WorkoutRunInfo,
     WorkoutSessionPR,
     WorkoutSetResponse,
 )
+from app.models.run_route import RunRoute
 from app.services.personal_records import SetCandidate, update_personal_records
 
 router = APIRouter(prefix="/workouts", tags=["workouts"])
@@ -30,16 +32,35 @@ def list_workouts(
     limit: int = Query(default=50, ge=1, le=1000),
     start: datetime | None = Query(default=None, description="Only workouts at or after this time (ISO 8601)"),
     end: datetime | None = Query(default=None, description="Only workouts before this time (ISO 8601)"),
+    route_previews: bool = Query(default=False, description="Include a small route outline for GPS-recorded runs"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[Workout]:
+) -> list[WorkoutResponse]:
     """Newest first. start/end (e.g. a local calendar month's bounds) narrow it to a range."""
     query = db.query(Workout).filter(Workout.user_id == current_user.id)
     if start is not None:
         query = query.filter(Workout.date >= start)
     if end is not None:
         query = query.filter(Workout.date < end)
-    return query.order_by(Workout.date.desc()).limit(limit).all()
+    workouts = query.order_by(Workout.date.desc()).limit(limit).all()
+
+    # Run summaries for the GPS-recorded ones (the outline is decrypted only when asked for).
+    ids = [w.id for w in workouts]
+    routes = {r.workout_id: r for r in db.query(RunRoute).filter(RunRoute.workout_id.in_(ids)).all()} if ids else {}
+    out = []
+    for w in workouts:
+        response = WorkoutResponse.model_validate(w)
+        route = routes.get(w.id)
+        if route is not None:
+            response.run = WorkoutRunInfo(
+                activity=route.activity,
+                distance_m=route.distance_m,
+                moving_seconds=route.moving_seconds,
+                elevation_gain_m=route.elevation_gain_m,
+                preview=route.preview if route_previews else None,
+            )
+        out.append(response)
+    return out
 
 
 @router.get("/{workout_id}/sets", response_model=list[WorkoutSetResponse])
@@ -128,8 +149,18 @@ def get_workout_detail(
 
     primary = list(dict.fromkeys(m for g in groups.values() for m in g.muscle_groups))
     secondary = [m for m in dict.fromkeys(m for g in groups.values() for m in g.secondary_muscle_groups) if m not in primary]
+    response_workout = WorkoutResponse.model_validate(workout)
+    route = db.get(RunRoute, workout.id)
+    if route is not None:
+        # The full route is fetched separately (GET /runs/{id}); here just the headline numbers.
+        response_workout.run = WorkoutRunInfo(
+            activity=route.activity,
+            distance_m=route.distance_m,
+            moving_seconds=route.moving_seconds,
+            elevation_gain_m=route.elevation_gain_m,
+        )
     return WorkoutDetailResponse(
-        workout=WorkoutResponse.model_validate(workout),
+        workout=response_workout,
         exercises=list(groups.values()),
         primary_muscles=primary,
         secondary_muscles=secondary,

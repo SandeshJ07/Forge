@@ -13,6 +13,7 @@ from app.api import (
     plans,
     profile,
     reminders,
+    runs,
     stats,
     workouts,
 )
@@ -43,6 +44,7 @@ app.include_router(plans.router)
 app.include_router(diet.router)
 app.include_router(stats.router)
 app.include_router(reminders.router)
+app.include_router(runs.router)
 
 
 @app.get("/health")

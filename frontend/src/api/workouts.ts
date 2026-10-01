@@ -52,13 +52,19 @@ export async function logManualWorkout(input: ManualWorkoutInput): Promise<LogMa
   };
 }
 
-export async function fetchRecentWorkouts(limit = 50): Promise<Workout[]> {
-  return apiClient.get<Workout[]>(`/workouts?limit=${limit}`);
+/** routePreviews adds a small route outline to GPS-recorded runs (for list thumbnails). */
+export async function fetchRecentWorkouts(limit = 50, routePreviews = false): Promise<Workout[]> {
+  return apiClient.get<Workout[]>(`/workouts?limit=${limit}${routePreviews ? '&route_previews=true' : ''}`);
 }
 
-/** Workouts in [start, end), newest first — e.g. one local calendar month. */
+/** Workouts in [start, end), newest first — e.g. one local calendar month — with route outlines for runs. */
 export async function fetchWorkoutsBetween(start: Date, end: Date): Promise<Workout[]> {
-  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '1000' });
+  const params = new URLSearchParams({
+    start: start.toISOString(),
+    end: end.toISOString(),
+    limit: '1000',
+    route_previews: 'true',
+  });
   return apiClient.get<Workout[]>(`/workouts?${params}`);
 }
 

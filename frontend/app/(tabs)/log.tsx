@@ -11,6 +11,9 @@ import { StreakCard } from '@/components/StreakCard';
 import { MonthPicker, startOfMonth } from '@/components/MonthPicker';
 import { useWorkoutHistory, useWorkoutsInMonth } from '@/hooks/useWorkouts';
 import { formatDay, formatDayTime } from '@/lib/format';
+import { formatDistance, paceFor } from '@/lib/runTracking';
+import { RouteSvg } from '@/components/RouteSvg';
+import { useUnitStore } from '@/stores/useUnitStore';
 import { colors, spacing } from '@/constants/theme';
 
 /** Backend summaries read "3 sets logged manually" — every workout is manual, so drop the noise. */
@@ -20,6 +23,7 @@ function shortSummary(summary: string | null): string | null {
 
 export default function LogScreen() {
   const router = useRouter();
+  const imperial = useUnitStore((s) => s.unitSystem) === 'imperial';
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   // A day tapped in the calendar narrows the list to that day; tapping it again shows the whole month.
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
@@ -49,7 +53,12 @@ export default function LogScreen() {
       <ScreenHeader
         title="Log"
         subtitle="Your training history"
-        right={<Button label="Log workout" size="small" onPress={() => router.push('/workout/new')} />}
+        right={
+          <View style={styles.headerActions}>
+            <Button label="Record run" size="small" variant="secondary" onPress={() => router.push('/run')} />
+            <Button label="Log workout" size="small" onPress={() => router.push('/workout/new')} />
+          </View>
+        }
       />
 
       <FlatList
@@ -63,11 +72,21 @@ export default function LogScreen() {
               accessibilityLabel={`${item.title ?? 'Workout'}, ${formatDayTime(item.date)}. View details`}
               style={({ pressed }) => [styles.workoutHead, pressed && styles.pressed]}
             >
+              {item.run?.preview?.length ? (
+                <RouteSvg segments={[item.run.preview]} width={56} height={56} strokeWidth={2} style={styles.thumb} />
+              ) : null}
               <View style={styles.flex}>
                 <Text style={styles.workoutTitle}>{item.title ?? 'Workout'}</Text>
                 <Text style={styles.workoutMeta}>
                   {formatDayTime(item.date)}
-                  {shortSummary(item.summary) ? ` · ${shortSummary(item.summary)}` : ''}
+                  {item.run
+                    ? ` · ${formatDistance(item.run.distance_m, imperial)} · ${paceFor(
+                        item.run.distance_m ? (item.run.moving_seconds / item.run.distance_m) * 1000 : null,
+                        imperial
+                      )}`
+                    : shortSummary(item.summary)
+                      ? ` · ${shortSummary(item.summary)}`
+                      : ''}
                 </Text>
               </View>
               <Text style={styles.detailsLink}>Details</Text>
@@ -141,6 +160,15 @@ const styles = StyleSheet.create({
   listHeader: {
     gap: spacing.md,
     marginBottom: spacing.xs,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  thumb: {
+    borderRadius: 8,
+    backgroundColor: colors.surfaceAlt,
+    marginRight: spacing.xs,
   },
   filterRow: {
     flexDirection: 'row',

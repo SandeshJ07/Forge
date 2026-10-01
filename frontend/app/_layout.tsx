@@ -24,6 +24,7 @@ import { DesktopSidebar } from '@/components/DesktopSidebar';
 import { HeaderBackButton } from '@/components/HeaderBackButton';
 import { PlanGenerationPill } from '@/components/PlanGenerationPill';
 import { WorkoutSessionOverlay } from '@/components/WorkoutSessionOverlay';
+import { RunTracker } from '@/components/RunTracker';
 import { colors } from '@/constants/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -128,6 +129,10 @@ function RootNavigation() {
             options={{ headerShown: true, title: 'Log workout', headerLeft: () => <HeaderBackButton fallback="/log" /> }}
           />
           <Stack.Screen
+            name="run/index"
+            options={{ headerShown: true, title: 'Record run', headerLeft: () => <HeaderBackButton fallback="/log" /> }}
+          />
+          <Stack.Screen
             name="workout/[id]"
             options={{ headerShown: true, title: 'Workout', headerLeft: () => <HeaderBackButton fallback="/log" /> }}
           />
@@ -138,6 +143,8 @@ function RootNavigation() {
             <PlanGenerationPill />
             {/* Rest-timer chime + "workout in progress" pill, on every screen. */}
             <WorkoutSessionOverlay />
+            {/* Keeps recording an active GPS run whichever screen is open. */}
+            <RunTracker />
           </>
         ) : null}
       </View>

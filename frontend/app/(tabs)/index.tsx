@@ -14,6 +14,10 @@ import { InstallPwaPrompt } from '@/components/InstallPwaPrompt';
 import { StreakCard } from '@/components/StreakCard';
 import { ProgressStatsCard } from '@/components/ProgressStatsCard';
 import { DietTodayCard } from '@/components/DietTodayCard';
+import { RouteSvg } from '@/components/RouteSvg';
+import { useRunStore } from '@/stores/useRunStore';
+import { useUnitStore } from '@/stores/useUnitStore';
+import { formatDistance } from '@/lib/runTracking';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { formatDay, formatDaysAgo } from '@/lib/format';
 import { hasWorkoutInProgress, useWorkoutSessionStore } from '@/stores/useWorkoutSessionStore';
@@ -25,6 +29,8 @@ export default function DashboardScreen() {
   const username = useAuthStore((s) => s.session?.username);
   const { data: workouts, isLoading: workoutsLoading } = useRecentWorkouts();
   const inProgress = hasWorkoutInProgress(useWorkoutSessionStore((s) => s.session));
+  const runInProgress = useRunStore((s) => s.status) !== 'idle';
+  const imperial = useUnitStore((s) => s.unitSystem) === 'imperial';
   const { data: records } = usePersonalRecords();
   const { data: history } = useWorkoutHistory();
   const { data: overview } = useStatsOverview();
@@ -85,10 +91,21 @@ export default function DashboardScreen() {
             />
             <StatTile label="Records" value={String(records?.length ?? 0)} hint="exercises" />
           </View>
-          <Button
-            label={inProgress ? 'Resume workout' : 'Log workout'}
-            onPress={() => router.push('/workout/new')}
-          />
+          <View style={styles.ctaRow}>
+            <View style={styles.flex}>
+              <Button
+                label={inProgress ? 'Resume workout' : 'Log workout'}
+                onPress={() => router.push('/workout/new')}
+              />
+            </View>
+            <View style={styles.flex}>
+              <Button
+                label={runInProgress ? 'Resume run' : 'Record a run'}
+                variant="secondary"
+                onPress={() => router.push('/run')}
+              />
+            </View>
+          </View>
           <StreakCard workoutDates={workoutDates} />
           {overview ? <ProgressStatsCard stats={overview} /> : null}
         </>
@@ -112,12 +129,19 @@ export default function DashboardScreen() {
               onPress={() => router.push(`/workout/${w.id}`)}
               style={({ pressed }) => [styles.activityRow, pressed && styles.pressed]}
             >
-              <View style={styles.activityIcon}>
-                <Ionicons name="barbell-outline" size={16} color={colors.primary} />
-              </View>
+              {w.run?.preview?.length ? (
+                <RouteSvg segments={[w.run.preview]} width={32} height={32} strokeWidth={1.5} style={styles.activityIcon} />
+              ) : (
+                <View style={styles.activityIcon}>
+                  <Ionicons name={w.run ? 'footsteps-outline' : 'barbell-outline'} size={16} color={colors.primary} />
+                </View>
+              )}
               <View style={styles.flex}>
                 <Text style={styles.activityTitle}>{w.title ?? 'Workout'}</Text>
-                <Text style={styles.activityMeta}>{formatDay(w.date)}</Text>
+                <Text style={styles.activityMeta}>
+                  {formatDay(w.date)}
+                  {w.run ? ` · ${formatDistance(w.run.distance_m, imperial)}` : ''}
+                </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
             </Pressable>

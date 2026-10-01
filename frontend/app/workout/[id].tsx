@@ -6,6 +6,7 @@ import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { MuscleMap } from '@/components/MuscleMap';
+import { RunRouteSection } from '@/components/RunRouteSection';
 import { WorkoutFeedbackControl } from '@/components/WorkoutFeedbackControl';
 import { formatClock } from '@/components/WorkoutSessionOverlay';
 import { useWorkoutDetail } from '@/hooks/useWorkouts';
@@ -132,22 +133,32 @@ export default function WorkoutDetailScreen() {
         <Text style={styles.muted}>{formatDayTime(workout.date)}</Text>
       </View>
 
-      <View style={styles.statsRow}>
-        <Stat label="Duration" value={workout.duration_seconds ? formatClock(workout.duration_seconds) : '—'} />
-        <Stat label="Exercises" value={String(exercises.length)} />
-        <Stat label="Sets" value={String(totalSets)} />
-        {volumeKg > 0 ? <Stat label="Volume" value={formatWeight(volumeKg, unitSystem)} /> : null}
-      </View>
+      {workout.run ? (
+        // GPS-recorded: the route, pace, splits and elevation say it all.
+        <>
+          <RunRouteSection workoutId={workout.id} />
+          <Button label="Record another run" variant="secondary" onPress={() => router.push('/run')} />
+        </>
+      ) : (
+        <>
+          <View style={styles.statsRow}>
+            <Stat label="Duration" value={workout.duration_seconds ? formatClock(workout.duration_seconds) : '—'} />
+            <Stat label="Exercises" value={String(exercises.length)} />
+            <Stat label="Sets" value={String(totalSets)} />
+            {volumeKg > 0 ? <Stat label="Volume" value={formatWeight(volumeKg, unitSystem)} /> : null}
+          </View>
 
-      <Button
-        label={inProgress ? 'Resume workout in progress' : 'Start workout'}
-        variant="secondary"
-        onPress={handleStart}
-        accessibilityHint={inProgress ? undefined : 'Starts a new workout with these exercises and weights'}
-      />
-      {!inProgress ? (
-        <Text style={[styles.muted, styles.centered]}>Same exercises and sets, with last time's weights filled in.</Text>
-      ) : null}
+          <Button
+            label={inProgress ? 'Resume workout in progress' : 'Start workout'}
+            variant="secondary"
+            onPress={handleStart}
+            accessibilityHint={inProgress ? undefined : 'Starts a new workout with these exercises and weights'}
+          />
+          {!inProgress ? (
+            <Text style={[styles.muted, styles.centered]}>Same exercises and sets, with last time's weights filled in.</Text>
+          ) : null}
+        </>
+      )}
 
       {prs.length ? (
         <Card style={styles.prCard}>
@@ -198,37 +209,41 @@ export default function WorkoutDetailScreen() {
         </Card>
       ) : null}
 
-      <Text style={styles.sectionTitle}>Exercises</Text>
-      {exercises.map((exercise, i) => (
-        <Card key={`${exercise.exercise_id ?? exercise.name}-${i}`} style={styles.card}>
-          <Pressable
-            disabled={!exercise.exercise_id}
-            onPress={() => router.push(`/exercise/${exercise.exercise_id}`)}
-            accessibilityRole={exercise.exercise_id ? 'link' : undefined}
-            style={[styles.exerciseHead, exercise.exercise_id ? styles.linkCursor : null]}
-          >
-            <View style={styles.flex}>
-              <Text style={styles.exerciseName}>{exercise.name}</Text>
-              {exercise.muscle_groups.length ? (
-                <Text style={styles.muted}>{listLabel(exercise.muscle_groups)}</Text>
-              ) : null}
-            </View>
-            {exercise.is_pr ? (
-              <View style={styles.prBadge}>
-                <Ionicons name="trophy" size={12} color={colors.warning} />
-                <Text style={styles.prBadgeText}>PR</Text>
-              </View>
-            ) : null}
-            {exercise.exercise_id ? <Ionicons name="chevron-forward" size={16} color={colors.textMuted} /> : null}
-          </Pressable>
-          {exercise.sets.map((set, n) => (
-            <View key={set.id} style={styles.setRow}>
-              <Text style={styles.setNumber}>{n + 1}</Text>
-              <Text style={styles.setText}>{describeSet(set, exercise, unitSystem)}</Text>
-            </View>
+      {!workout.run ? (
+        <>
+          <Text style={styles.sectionTitle}>Exercises</Text>
+          {exercises.map((exercise, i) => (
+            <Card key={`${exercise.exercise_id ?? exercise.name}-${i}`} style={styles.card}>
+              <Pressable
+                disabled={!exercise.exercise_id}
+                onPress={() => router.push(`/exercise/${exercise.exercise_id}`)}
+                accessibilityRole={exercise.exercise_id ? 'link' : undefined}
+                style={[styles.exerciseHead, exercise.exercise_id ? styles.linkCursor : null]}
+              >
+                <View style={styles.flex}>
+                  <Text style={styles.exerciseName}>{exercise.name}</Text>
+                  {exercise.muscle_groups.length ? (
+                    <Text style={styles.muted}>{listLabel(exercise.muscle_groups)}</Text>
+                  ) : null}
+                </View>
+                {exercise.is_pr ? (
+                  <View style={styles.prBadge}>
+                    <Ionicons name="trophy" size={12} color={colors.warning} />
+                    <Text style={styles.prBadgeText}>PR</Text>
+                  </View>
+                ) : null}
+                {exercise.exercise_id ? <Ionicons name="chevron-forward" size={16} color={colors.textMuted} /> : null}
+              </Pressable>
+              {exercise.sets.map((set, n) => (
+                <View key={set.id} style={styles.setRow}>
+                  <Text style={styles.setNumber}>{n + 1}</Text>
+                  <Text style={styles.setText}>{describeSet(set, exercise, unitSystem)}</Text>
+                </View>
+              ))}
+            </Card>
           ))}
-        </Card>
-      ))}
+        </>
+      ) : null}
 
       <Card style={styles.card}>
         <WorkoutFeedbackControl workout={workout} />

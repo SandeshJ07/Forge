@@ -16,7 +16,7 @@ export function useRecentWorkouts() {
   const userId = useAuthStore((s) => s.session?.userId);
   return useQuery({
     queryKey: ['workouts', userId],
-    queryFn: () => fetchRecentWorkouts(),
+    queryFn: () => fetchRecentWorkouts(50, true),
     enabled: Boolean(userId),
   });
 }

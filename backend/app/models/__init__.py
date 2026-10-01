@@ -7,6 +7,7 @@ from app.models.personal_record import PersonalRecord
 from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.push_subscription import PushSubscription
+from app.models.run_route import RunRoute
 from app.models.user import User
 from app.models.workout import Workout, WorkoutSet
 
@@ -22,6 +23,7 @@ __all__ = [
     "GeneratedPlan",
     "UserProfile",
     "PushSubscription",
+    "RunRoute",
     "User",
     "Workout",
     "WorkoutSet",
