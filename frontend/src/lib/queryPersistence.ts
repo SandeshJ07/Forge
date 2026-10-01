@@ -42,8 +42,21 @@ function shouldPersist(query: Query): boolean {
   return query.state.status === 'success' && PERSISTED_QUERIES.has(String(query.queryKey[0]));
 }
 
+/**
+ * Only queries still in memory get saved, and by default a query no screen is
+ * using is dropped after 5 minutes. Without this, opening the app and not
+ * visiting e.g. the diet plan within 5 minutes would wipe it from the saved copy
+ * at the next save. Keep these as long as the saved copy itself is valid.
+ */
+function keepPersistedQueriesInMemory(): void {
+  for (const key of PERSISTED_QUERIES) {
+    queryClient.setQueryDefaults([key], { gcTime: MAX_AGE_MS });
+  }
+}
+
 /** Loads the saved copy into the query client. Call once, before screens mount. */
 export async function restoreQueryCache(): Promise<void> {
+  keepPersistedQueriesInMemory();
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return;

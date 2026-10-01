@@ -26,9 +26,12 @@ export default function DietPlanScreen() {
     generation?.status === 'failed' &&
     (!latest || new Date(generation.started_at ?? 0) > new Date(latest.created_at));
   const hasKey = Boolean(access?.available);
+  // Until the key check answers, don't claim there's no key — a cached plan shows meanwhile.
+  const noKey = !accessPending && !hasKey;
   const provider = providerInfo(access?.provider ?? undefined);
 
-  if (accessPending || latestPending) {
+  // Only the plan itself gates the screen; it's usually already cached on the device.
+  if (latestPending) {
     return (
       <ScreenContainer>
         <ActivityIndicator color={colors.primary} style={styles.loader} />
@@ -40,7 +43,7 @@ export default function DietPlanScreen() {
     <ScreenContainer>
       <PlanSectionSwitch active="diet" />
 
-      {!hasKey ? (
+      {noKey ? (
         <Card style={styles.keyCard}>
           <Ionicons name="key-outline" size={22} color={colors.warning} />
           <View style={styles.flex}>
@@ -50,7 +53,7 @@ export default function DietPlanScreen() {
               app's shared key only covers workout plans.
             </Text>
             <View style={styles.actions}>
-              <Button label="Add a key in Settings" size="small" onPress={() => router.push('/settings')} />
+              <Button label="Add a key in Settings" size="small" onPress={() => router.push('/settings?tab=ai')} />
             </View>
           </View>
         </Card>

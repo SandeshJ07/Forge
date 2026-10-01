@@ -168,7 +168,7 @@ export default function PlanPreferencesScreen() {
         history.
       </Text>
 
-      {usage ? <UsageCard usage={usage} onOpenSettings={() => router.push('/settings')} /> : null}
+      {usage ? <UsageCard usage={usage} onOpenSettings={() => router.push('/settings?tab=ai')} /> : null}
 
       <Section title="Which days can you train?" hint={`${days.length} day${days.length === 1 ? '' : 's'} a week`}>
         <ChipGroup>

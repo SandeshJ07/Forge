@@ -96,6 +96,8 @@ export interface NewExercise {
   targetReps?: string;
   restSeconds?: number;
   notes?: string;
+  /** Weight to pre-fill each set with (e.g. repeating a past workout); its length sets the set count. */
+  presetWeights?: string[];
 }
 
 interface SessionState {
@@ -106,6 +108,8 @@ interface SessionState {
   /** Sets the full date and time. */
   setDateTime: (date: Date) => void;
   addExercise: (exercise: NewExercise) => void;
+  /** Starts a new workout with these exercises (e.g. "Start workout" on a past one). Replaces any empty draft. */
+  startWorkout: (title: string, exercises: NewExercise[]) => void;
   addPlanGroup: (planId: string, groupIndex: number, group: PlanGroup) => void;
   removeExercise: (exerciseKey: string) => void;
   /** Moves an exercise up (-1) or down (+1) in the workout. */
@@ -168,7 +172,7 @@ function emptySet(weight = ''): SessionSet {
 }
 
 function toSessionExercise(input: NewExercise): SessionExercise {
-  const count = Math.max(1, input.sets ?? 1);
+  const count = Math.max(1, input.presetWeights?.length || input.sets || 1);
   return {
     key: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     exerciseId: input.exerciseId,
@@ -177,7 +181,7 @@ function toSessionExercise(input: NewExercise): SessionExercise {
     targetReps: input.targetReps ?? '',
     restSeconds: input.restSeconds && input.restSeconds > 0 ? input.restSeconds : DEFAULT_REST_SECONDS,
     notes: input.notes,
-    sets: Array.from({ length: count }, () => emptySet()),
+    sets: Array.from({ length: count }, (_, i) => emptySet(input.presetWeights?.[i] ?? '')),
   };
 }
 
@@ -225,6 +229,9 @@ export const useWorkoutSessionStore = create<SessionState>()(
         setDateTime: (date) => update((s) => ({ ...s, date: Math.min(date.getTime(), Date.now()) })),
 
         addExercise: (exercise) => update((s) => ({ ...s, exercises: [...s.exercises, toSessionExercise(exercise)] })),
+
+        startWorkout: (title, exercises) =>
+          set({ session: { ...emptySession(), title: title.trim() || DEFAULT_TITLE, exercises: exercises.map(toSessionExercise) } }),
 
         addPlanGroup: (planId, groupIndex, group) =>
           update((s) => {

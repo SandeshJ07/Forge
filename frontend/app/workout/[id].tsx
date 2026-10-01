@@ -4,12 +4,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { MuscleMap } from '@/components/MuscleMap';
 import { WorkoutFeedbackControl } from '@/components/WorkoutFeedbackControl';
 import { formatClock } from '@/components/WorkoutSessionOverlay';
 import { useWorkoutDetail } from '@/hooks/useWorkouts';
 import { useUnitStore } from '@/stores/useUnitStore';
-import { formatDayTime, formatWeight, humanize } from '@/lib/format';
+import { formatDayTime, formatWeight, humanize, LB_PER_KG } from '@/lib/format';
+import { hasWorkoutInProgress, useWorkoutSessionStore, type NewExercise } from '@/stores/useWorkoutSessionStore';
 import { muscleFills } from '@/lib/muscleMap';
 import { distanceUnit, formatDuration, resolveTracking } from '@/lib/tracking';
 import type { UnitSystem, WorkoutDetail, WorkoutSet } from '@/types/database';
@@ -45,12 +47,53 @@ function listLabel(muscles: string[]): string {
   return muscles.map(humanize).join(', ');
 }
 
+/** The same exercises and set counts, weights carried over, and last time's reps / time / distance as the target. */
+function toNewExercises(exercises: DetailExercise[], unitSystem: UnitSystem): NewExercise[] {
+  return exercises
+    .filter((e) => e.sets.length)
+    .map((e) => {
+      const tracking = resolveTracking(e.tracking_type, e.name);
+      const first = e.sets[0];
+      // e.g. "8", "45 s", or "3.2 km · 20 min" — the logger reads reps, time and distance out of it.
+      const parts: string[] = [];
+      if (first.distance_meters != null) {
+        const unit = distanceUnit(tracking, unitSystem);
+        parts.push(`${Math.round((first.distance_meters / METERS_PER[unit as keyof typeof METERS_PER]) * 100) / 100} ${unit}`);
+      }
+      if (first.duration_seconds != null) {
+        parts.push(first.duration_seconds >= 120 ? `${Math.round(first.duration_seconds / 60)} min` : `${first.duration_seconds} s`);
+      }
+      if (first.reps != null && !parts.length) parts.push(String(first.reps));
+      const target = parts.join(' · ');
+      return {
+        exerciseId: e.exercise_id,
+        name: e.name,
+        tracking,
+        targetReps: target,
+        presetWeights: e.sets.map((s) => {
+          if (s.weight_kg == null || s.weight_kg <= 0) return '';
+          const value = unitSystem === 'imperial' ? s.weight_kg * LB_PER_KG : s.weight_kg;
+          return String(Math.round(value * 2) / 2); // nearest half kg / lb
+        }),
+      };
+    });
+}
+
 /** A logged workout: what was done, the muscles it hit, and any PRs set that day. */
 export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const unitSystem = useUnitStore((s) => s.unitSystem);
   const { data, isPending, isError } = useWorkoutDetail(id);
+  const activeSession = useWorkoutSessionStore((s) => s.session);
+  const startWorkout = useWorkoutSessionStore((s) => s.startWorkout);
+  const inProgress = hasWorkoutInProgress(activeSession);
+
+  // One workout at a time: with one already under way, this just goes back to it.
+  function handleStart() {
+    if (!inProgress && data) startWorkout(data.workout.title ?? 'Workout', toNewExercises(data.exercises, unitSystem));
+    router.push('/workout/new');
+  }
 
   const fills = useMemo(
     () => (data ? muscleFills(data.primary_muscles, data.secondary_muscles, colors.primary, SECONDARY_COLOR) : {}),
@@ -95,6 +138,16 @@ export default function WorkoutDetailScreen() {
         <Stat label="Sets" value={String(totalSets)} />
         {volumeKg > 0 ? <Stat label="Volume" value={formatWeight(volumeKg, unitSystem)} /> : null}
       </View>
+
+      <Button
+        label={inProgress ? 'Resume workout in progress' : 'Start workout'}
+        variant="secondary"
+        onPress={handleStart}
+        accessibilityHint={inProgress ? undefined : 'Starts a new workout with these exercises and weights'}
+      />
+      {!inProgress ? (
+        <Text style={[styles.muted, styles.centered]}>Same exercises and sets, with last time's weights filled in.</Text>
+      ) : null}
 
       {prs.length ? (
         <Card style={styles.prCard}>
@@ -213,6 +266,7 @@ const styles = StyleSheet.create({
   emptyCard: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
   muted: { color: colors.textMuted, fontSize: 13 },
+  centered: { textAlign: 'center' },
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   stat: { flex: 1, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.sm, gap: 2 },
   statLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },

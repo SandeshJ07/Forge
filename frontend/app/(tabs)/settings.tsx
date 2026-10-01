@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -26,7 +28,7 @@ import { usePwaInstall } from '@/lib/pwaInstall';
 import { getRestAlertPermission, requestRestAlertPermission, type RestAlertPermission } from '@/lib/restNotifications';
 import { useRestAlertStore } from '@/stores/useRestAlertStore';
 import type { ExperienceLevel, Gender, UnitSystem } from '@/types/database';
-import { colors, spacing } from '@/constants/theme';
+import { colors, radii, spacing } from '@/constants/theme';
 
 const EXPERIENCE_LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: 'beginner', label: 'Beginner' },
@@ -46,7 +48,25 @@ const UNITS: { value: UnitSystem; label: string }[] = [
 
 type Message = { text: string; isError: boolean } | null;
 
+type SettingsTab = 'training' | 'profile' | 'ai' | 'account';
+const SETTINGS_TABS: { value: SettingsTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'training', label: 'Training', icon: 'barbell-outline' },
+  { value: 'profile', label: 'Profile', icon: 'person-outline' },
+  { value: 'ai', label: 'AI', icon: 'sparkles-outline' },
+  { value: 'account', label: 'Account', icon: 'key-outline' },
+];
+
+function isSettingsTab(value: unknown): value is SettingsTab {
+  return SETTINGS_TABS.some((t) => t.value === value);
+}
+
 export default function SettingsScreen() {
+  // Links can open a tab directly, e.g. /settings?tab=ai from "add your AI key" prompts.
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<SettingsTab>(isSettingsTab(params.tab) ? params.tab : 'training');
+  useEffect(() => {
+    if (isSettingsTab(params.tab)) setTab(params.tab);
+  }, [params.tab]);
   const queryClient = useQueryClient();
   const { data: profile, refetch: refetchProfile } = useUserProfile();
   const upsertProfile = useUpsertUserProfile();
@@ -171,227 +191,243 @@ export default function SettingsScreen() {
   return (
     <ScreenContainer>
       <ScreenHeader title="Settings" subtitle="Changes save automatically unless there's a Save button." />
+      <SettingsTabs active={tab} onChange={setTab} />
 
-      <Section title="Account">
-        <Card style={styles.card}>
-          <TextField
-            label="Username"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={usernameInput}
-            onChangeText={(v) => {
-              setUsernameInput(v);
-              setUsernameMessage(null);
-            }}
-          />
-          {usernameMessage ? <InlineMessage message={usernameMessage} /> : null}
-          {usernameChanged ? (
-            <Button label="Save username" onPress={handleSaveUsername} loading={usernameSaving} />
-          ) : null}
-        </Card>
-        {profile ? <PasswordCard hasPassword={profile.has_password} /> : null}
-      </Section>
+      {tab === 'training' ? (
+        <>
+        <Section title="Training" hint="Used every time a plan is generated.">
+          <Card style={styles.card}>
+            <Field label={`Goals (up to ${MAX_GOALS})`}>
+              <ChipGroup>
+                {GOAL_OPTIONS.map((g) => {
+                  const goals = profile?.goals ?? [];
+                  const selected = goals.includes(g.value);
+                  return (
+                    <Chip
+                      key={g.value}
+                      label={g.label}
+                      showCheck
+                      selected={selected}
+                      disabled={goals.length >= MAX_GOALS && !selected}
+                      onPress={() => upsertProfile.mutate({ goals: toggleGoal(goals, g.value) })}
+                    />
+                  );
+                })}
+              </ChipGroup>
+              <Text style={styles.hint}>
+                {(profile?.goals?.length ?? 0) >= MAX_GOALS
+                  ? `Main goal: ${GOAL_OPTIONS.find((o) => o.value === profile?.goals[0])?.label}. Tap one to remove it and pick another.`
+                  : 'The first goal you pick is your main one.'}
+              </Text>
+            </Field>
+            <Field label="Experience">
+              <ChipGroup>
+                {EXPERIENCE_LEVELS.map((l) => (
+                  <Chip
+                    key={l.value}
+                    label={l.label}
+                    selected={profile?.experience_level === l.value}
+                    onPress={() => upsertProfile.mutate({ experience_level: l.value })}
+                  />
+                ))}
+              </ChipGroup>
+            </Field>
+            <Field label="Equipment you have">
+              <ChipGroup>
+                {EQUIPMENT_OPTIONS.map((option) => (
+                  <Chip
+                    key={option.value}
+                    label={option.label}
+                    showCheck
+                    selected={equipment.includes(option.value)}
+                    onPress={() => toggleEquipment(option.value)}
+                  />
+                ))}
+              </ChipGroup>
+              {!equipment.length ? (
+                <Text style={styles.hint}>Nothing selected — plans will assume a standard commercial gym.</Text>
+              ) : null}
+            </Field>
+          </Card>
+        </Section>
+        <Section title="Reminders">
+          <Card style={styles.card}>
+            <Field label="Plan refresh reminder">
+              <RefreshReminderPicker
+                cadence={profile?.plan_refresh_cadence ?? 'monthly'}
+                days={profile?.plan_refresh_days ?? null}
+                onChange={(cadence, days) =>
+                  upsertProfile.mutate({ plan_refresh_cadence: cadence, plan_refresh_days: days })
+                }
+              />
+            </Field>
+            <GymReminderSettings profile={profile} />
+          </Card>
+        </Section>
+          <RestAlertsSection />
+        </>
+      ) : null}
 
-      <Section title="Training" hint="Used every time a plan is generated.">
-        <Card style={styles.card}>
-          <Field label={`Goals (up to ${MAX_GOALS})`}>
-            <ChipGroup>
-              {GOAL_OPTIONS.map((g) => {
-                const goals = profile?.goals ?? [];
-                const selected = goals.includes(g.value);
-                return (
+      {tab === 'profile' ? (
+        <>
+        <Section title="About you" hint="Optional — helps set sensible starting weights and volume.">
+          <Card style={styles.card}>
+            <Field label="Gender">
+              <ChipGroup>
+                {GENDERS.map((g) => (
                   <Chip
                     key={g.value}
                     label={g.label}
-                    showCheck
-                    selected={selected}
-                    disabled={goals.length >= MAX_GOALS && !selected}
-                    onPress={() => upsertProfile.mutate({ goals: toggleGoal(goals, g.value) })}
+                    selected={profile?.gender === g.value}
+                    onPress={() => upsertProfile.mutate({ gender: g.value })}
                   />
-                );
-              })}
-            </ChipGroup>
-            <Text style={styles.hint}>
-              {(profile?.goals?.length ?? 0) >= MAX_GOALS
-                ? `Main goal: ${GOAL_OPTIONS.find((o) => o.value === profile?.goals[0])?.label}. Tap one to remove it and pick another.`
-                : 'The first goal you pick is your main one.'}
-            </Text>
-          </Field>
-          <Field label="Experience">
-            <ChipGroup>
-              {EXPERIENCE_LEVELS.map((l) => (
-                <Chip
-                  key={l.value}
-                  label={l.label}
-                  selected={profile?.experience_level === l.value}
-                  onPress={() => upsertProfile.mutate({ experience_level: l.value })}
+                ))}
+              </ChipGroup>
+            </Field>
+            <View style={styles.inputRow}>
+              <View style={styles.inputRowItem}>
+                <TextField
+                  label="Birth year"
+                  placeholder="1995"
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  value={birthYearInput}
+                  onChangeText={(v) => setBirthYearInput(v.replace(/\D/g, ''))}
+                  onBlur={handleSaveAboutYou}
                 />
-              ))}
-            </ChipGroup>
-          </Field>
-          <Field label="Equipment you have">
-            <ChipGroup>
-              {EQUIPMENT_OPTIONS.map((option) => (
-                <Chip
-                  key={option.value}
-                  label={option.label}
-                  showCheck
-                  selected={equipment.includes(option.value)}
-                  onPress={() => toggleEquipment(option.value)}
+              </View>
+              <View style={styles.inputRowItem}>
+                <TextField
+                  label={`Height (${isImperial ? 'in' : 'cm'})`}
+                  placeholder={isImperial ? '68' : '173'}
+                  keyboardType="decimal-pad"
+                  value={heightInput}
+                  onChangeText={setHeightInput}
+                  onBlur={handleSaveAboutYou}
                 />
-              ))}
-            </ChipGroup>
-            {!equipment.length ? (
-              <Text style={styles.hint}>Nothing selected — plans will assume a standard commercial gym.</Text>
-            ) : null}
-          </Field>
-          <Field label="Plan refresh reminder">
-            <RefreshReminderPicker
-              cadence={profile?.plan_refresh_cadence ?? 'monthly'}
-              days={profile?.plan_refresh_days ?? null}
-              onChange={(cadence, days) =>
-                upsertProfile.mutate({ plan_refresh_cadence: cadence, plan_refresh_days: days })
-              }
-            />
-          </Field>
-          <GymReminderSettings profile={profile} />
-        </Card>
-      </Section>
-
-      <Section title="About you" hint="Optional — helps set sensible starting weights and volume.">
-        <Card style={styles.card}>
-          <Field label="Gender">
-            <ChipGroup>
-              {GENDERS.map((g) => (
-                <Chip
-                  key={g.value}
-                  label={g.label}
-                  selected={profile?.gender === g.value}
-                  onPress={() => upsertProfile.mutate({ gender: g.value })}
-                />
-              ))}
-            </ChipGroup>
-          </Field>
-          <View style={styles.inputRow}>
-            <View style={styles.inputRowItem}>
-              <TextField
-                label="Birth year"
-                placeholder="1995"
-                keyboardType="number-pad"
-                maxLength={4}
-                value={birthYearInput}
-                onChangeText={(v) => setBirthYearInput(v.replace(/\D/g, ''))}
-                onBlur={handleSaveAboutYou}
-              />
+              </View>
             </View>
-            <View style={styles.inputRowItem}>
-              <TextField
-                label={`Height (${isImperial ? 'in' : 'cm'})`}
-                placeholder={isImperial ? '68' : '173'}
-                keyboardType="decimal-pad"
-                value={heightInput}
-                onChangeText={setHeightInput}
-                onBlur={handleSaveAboutYou}
-              />
-            </View>
-          </View>
-        </Card>
-      </Section>
-
-      <Section title="Units">
-        <Card style={styles.card}>
-          <ChipGroup>
-            {UNITS.map((u) => (
-              <Chip
-                key={u.value}
-                label={u.label}
-                selected={profile?.unit_system === u.value}
-                onPress={() => upsertProfile.mutate({ unit_system: u.value })}
-              />
-            ))}
-          </ChipGroup>
-        </Card>
-      </Section>
-
-      <RestAlertsSection />
-
-      <Section
-        title="AI plan generation"
-        hint={`Plans are built with the app's AI — ${usage?.limit ?? 5} free generations a day. Optional: add your own key for unlimited use.`}
-      >
-        <Card style={styles.card}>
-          <Field label="Provider">
-            <ChipGroup>
-              {AI_PROVIDERS.map((p) => (
-                <Chip
-                  key={p.value}
-                  label={`${p.name} (${p.company})`}
-                  selected={provider.value === p.value}
-                  onPress={() => handleChooseProvider(p.value)}
-                />
-              ))}
-            </ChipGroup>
-          </Field>
-          <Text style={styles.bodyText}>
-            {hasOwnKey
-              ? `Using your own ${provider.name} API key — plan generation is billed to your ${provider.company} account.`
-              : `Using the app's built-in AI${usage?.remaining != null ? ` — ${usage.remaining} of ${usage.limit} generations left today` : ''}. For unlimited generations, add your own ${provider.name} API key below; usage is then billed to your ${provider.company} account.`}
-          </Text>
-          {aiMessage ? <InlineMessage message={aiMessage} /> : null}
-          {hasOwnKey ? (
-            <Button label={`Remove my ${provider.name} key`} variant="secondary" onPress={handleClearAiKey} />
-          ) : (
-            <>
-              <TextField
-                label={`${provider.name} API key`}
-                placeholder={provider.keyPlaceholder}
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry
-                value={aiKeyInput}
-                onChangeText={setAiKeyInput}
-                onSubmitEditing={handleSaveAiKey}
-              />
-              <Text style={styles.hint}>{provider.keyHelp}</Text>
-              {aiKeyInput.trim() ? (
-                <Button label={`Save ${provider.name} key`} onPress={handleSaveAiKey} loading={aiKeySaving} />
-              ) : null}
-            </>
-          )}
-        </Card>
-      </Section>
-
-      {isMobileWeb ? (
-        <Section title="App">
+          </Card>
+        </Section>
+        <Section title="Units">
           <Card style={styles.card}>
-            {pwa.installed ? (
-              <Text style={styles.bodyText}>You're using the installed Forge app.</Text>
+            <ChipGroup>
+              {UNITS.map((u) => (
+                <Chip
+                  key={u.value}
+                  label={u.label}
+                  selected={profile?.unit_system === u.value}
+                  onPress={() => upsertProfile.mutate({ unit_system: u.value })}
+                />
+              ))}
+            </ChipGroup>
+          </Card>
+        </Section>
+        </>
+      ) : null}
+
+      {tab === 'ai' ? (
+        <>
+        <Section
+          title="AI plan generation"
+          hint={`Plans are built with the app's AI — ${usage?.limit ?? 5} free generations a day. Optional: add your own key for unlimited use.`}
+        >
+          <Card style={styles.card}>
+            <Field label="Provider">
+              <ChipGroup>
+                {AI_PROVIDERS.map((p) => (
+                  <Chip
+                    key={p.value}
+                    label={`${p.name} (${p.company})`}
+                    selected={provider.value === p.value}
+                    onPress={() => handleChooseProvider(p.value)}
+                  />
+                ))}
+              </ChipGroup>
+            </Field>
+            <Text style={styles.bodyText}>
+              {hasOwnKey
+                ? `Using your own ${provider.name} API key — plan generation is billed to your ${provider.company} account.`
+                : `Using the app's built-in AI${usage?.remaining != null ? ` — ${usage.remaining} of ${usage.limit} generations left today` : ''}. For unlimited generations, add your own ${provider.name} API key below; usage is then billed to your ${provider.company} account.`}
+            </Text>
+            {aiMessage ? <InlineMessage message={aiMessage} /> : null}
+            {hasOwnKey ? (
+              <Button label={`Remove my ${provider.name} key`} variant="secondary" onPress={handleClearAiKey} />
             ) : (
               <>
-                <Text style={styles.bodyText}>
-                  Install Forge on your home screen — it opens full-screen like a regular app, with no browser bars.
-                </Text>
-                <Button label="Install app" onPress={handleInstallApp} />
+                <TextField
+                  label={`${provider.name} API key`}
+                  placeholder={provider.keyPlaceholder}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  value={aiKeyInput}
+                  onChangeText={setAiKeyInput}
+                  onSubmitEditing={handleSaveAiKey}
+                />
+                <Text style={styles.hint}>{provider.keyHelp}</Text>
+                {aiKeyInput.trim() ? (
+                  <Button label={`Save ${provider.name} key`} onPress={handleSaveAiKey} loading={aiKeySaving} />
+                ) : null}
               </>
             )}
           </Card>
-          <InstallAppSheet
-            visible={installSheetOpen}
-            method={pwa.fallbackMethod}
-            onClose={() => setInstallSheetOpen(false)}
-          />
         </Section>
+        </>
       ) : null}
 
-      <View style={styles.signOut}>
-        <Button label="Sign out" variant="secondary" onPress={() => signOutAndReset(queryClient)} />
-        <Text style={styles.hint}>
-          To switch accounts, sign out and sign in with the other one. Signing out clears this account's data from
-          this device.
-        </Text>
-      </View>
-
-      <DeleteAccountSection hasPassword={profile?.has_password ?? true} username={profile ? username : undefined} />
+      {tab === 'account' ? (
+        <>
+        <Section title="Account">
+          <Card style={styles.card}>
+            <TextField
+              label="Username"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={usernameInput}
+              onChangeText={(v) => {
+                setUsernameInput(v);
+                setUsernameMessage(null);
+              }}
+            />
+            {usernameMessage ? <InlineMessage message={usernameMessage} /> : null}
+            {usernameChanged ? (
+              <Button label="Save username" onPress={handleSaveUsername} loading={usernameSaving} />
+            ) : null}
+          </Card>
+          {profile ? <PasswordCard hasPassword={profile.has_password} /> : null}
+        </Section>
+        {isMobileWeb ? (
+          <Section title="App">
+            <Card style={styles.card}>
+              {pwa.installed ? (
+                <Text style={styles.bodyText}>You're using the installed Forge app.</Text>
+              ) : (
+                <>
+                  <Text style={styles.bodyText}>
+                    Install Forge on your home screen — it opens full-screen like a regular app, with no browser bars.
+                  </Text>
+                  <Button label="Install app" onPress={handleInstallApp} />
+                </>
+              )}
+            </Card>
+            <InstallAppSheet
+              visible={installSheetOpen}
+              method={pwa.fallbackMethod}
+              onClose={() => setInstallSheetOpen(false)}
+            />
+          </Section>
+        ) : null}
+        <View style={styles.signOut}>
+          <Button label="Sign out" variant="secondary" onPress={() => signOutAndReset(queryClient)} />
+          <Text style={styles.hint}>
+            To switch accounts, sign out and sign in with the other one. Signing out clears this account's data from
+            this device.
+          </Text>
+        </View>
+        <DeleteAccountSection hasPassword={profile?.has_password ?? true} username={profile ? username : undefined} />
+        </>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -688,6 +724,31 @@ function DeleteAccountSection({ hasPassword, username }: { hasPassword: boolean;
   );
 }
 
+/** Groups the settings so each screen stays short. */
+function SettingsTabs({ active, onChange }: { active: SettingsTab; onChange: (tab: SettingsTab) => void }) {
+  return (
+    <View style={styles.tabs} accessibilityRole="tablist">
+      {SETTINGS_TABS.map((t) => {
+        const selected = t.value === active;
+        return (
+          <Pressable
+            key={t.value}
+            onPress={() => onChange(t.value)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            style={[styles.tab, selected && styles.tabActive]}
+          >
+            <Ionicons name={t.icon} size={15} color={selected ? colors.text : colors.textMuted} />
+            <Text style={[styles.tabLabel, selected && styles.tabLabelActive]} numberOfLines={1}>
+              {t.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
@@ -714,6 +775,29 @@ function InlineMessage({ message }: { message: NonNullable<Message> }) {
 }
 
 const styles = StyleSheet.create({
+  tabs: {
+    flexDirection: 'row',
+    padding: 4,
+    gap: 4,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: 2,
+    borderRadius: radii.sm,
+    cursor: 'pointer',
+  },
+  tabActive: { backgroundColor: colors.primaryMuted },
+  tabLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  tabLabelActive: { color: colors.text },
   resendLink: {
     color: colors.primary,
     fontSize: 14,
