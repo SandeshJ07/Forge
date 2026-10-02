@@ -10,7 +10,7 @@ import { colors, spacing } from '@/constants/theme';
 const WEIGHT_UNIT_BY_SYSTEM = { metric: 'kg', imperial: 'lb' } as const;
 const LENGTH_UNIT_BY_SYSTEM = { metric: 'cm', imperial: 'in' } as const;
 
-function defaultUnitFor(type: MeasurementType, unitSystem: 'metric' | 'imperial'): string {
+export function defaultUnitFor(type: MeasurementType, unitSystem: 'metric' | 'imperial'): string {
   if (type === 'body_weight') return WEIGHT_UNIT_BY_SYSTEM[unitSystem];
   if (type === 'body_fat_pct') return '%';
   return LENGTH_UNIT_BY_SYSTEM[unitSystem];

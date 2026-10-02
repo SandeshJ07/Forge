@@ -66,6 +66,9 @@ class UserProfile(Base):
     # taps "Create my plan", whether or not that generation then succeeds.
     # Encrypted: its free-text notes can mention injuries or health conditions.
     plan_preferences: Mapped[dict | None] = mapped_column(EncryptedJSON)
+    # Target per measurement type, e.g. {"body_weight": {"value": 72, "unit": "kg"}} — the
+    # baseline on the Progress chart. Body data, so encrypted like the measurements themselves.
+    measurement_targets: Mapped[dict | None] = mapped_column(EncryptedJSON)
     # Daily "time to train" reminder: local time "HH:MM" (None = off) on these weekdays
     # ("mon".."sun"), in the user's IANA timezone.
     gym_reminder_time: Mapped[str | None] = mapped_column(String)

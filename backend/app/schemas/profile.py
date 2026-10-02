@@ -9,6 +9,13 @@ Goal = Literal["strength", "hypertrophy", "general_fitness", "endurance", "weigh
 MAX_GOALS = 2
 
 
+class MeasurementTarget(BaseModel):
+    """A target value for one measurement type, in the unit it was entered in."""
+
+    value: float = Field(gt=0, le=10_000)
+    unit: str = Field(min_length=1, max_length=10)
+
+
 class UserProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +40,12 @@ class UserProfileResponse(BaseModel):
     gym_reminder_time: str | None = None
     gym_reminder_days: list[str] = []
     timezone: str | None = None
+    measurement_targets: dict[str, MeasurementTarget] = {}
+
+    @field_validator("measurement_targets", mode="before")
+    @classmethod
+    def _none_to_empty(cls, value: Any) -> Any:
+        return value or {}
 
 
 Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -58,6 +71,18 @@ class UserProfileUpdate(BaseModel):
     gym_reminder_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     gym_reminder_days: list[Weekday] | None = Field(default=None, max_length=7)
     timezone: str | None = Field(default=None, max_length=64)
+    # The whole target map: the app sends every target each time (null / {} clears them all).
+    measurement_targets: dict[str, MeasurementTarget] | None = Field(default=None, max_length=50)
+
+    @field_validator("measurement_targets")
+    @classmethod
+    def _valid_target_keys(cls, value: dict | None) -> dict | None:
+        if value is None:
+            return None
+        for key in value:
+            if not key or len(key) > 50:
+                raise ValueError("Invalid measurement type")
+        return value
 
     @field_validator("gym_reminder_days")
     @classmethod

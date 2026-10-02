@@ -1,8 +1,8 @@
 import { Platform, Vibration } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 
-// Short two-note chime synthesized for Forge (assets/sounds/rest-done.wav) — no third-party audio.
-const CHIME = require('../../assets/sounds/rest-done.wav');
+// Short two-note chime synthesized for Forge (assets/sounds/rest_done.wav) — no third-party audio.
+const CHIME = require('../../assets/sounds/rest_done.wav');
 
 let player: AudioPlayer | null = null;
 

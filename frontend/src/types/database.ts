@@ -144,6 +144,11 @@ export interface WorkoutDetail {
   }[];
 }
 
+export interface MeasurementTarget {
+  value: number;
+  unit: string;
+}
+
 export interface Measurement {
   id: string;
   user_id: string;
@@ -262,6 +267,8 @@ export interface UserProfile {
   gym_reminder_days: Weekday[];
   /** IANA timezone the reminder time is in. */
   timezone: string | null;
+  /** Target per measurement type (the Progress chart's baseline), in the unit it was entered in. */
+  measurement_targets: Record<string, MeasurementTarget>;
   gender: Gender | null;
   birth_year: number | null;
   height_cm: number | null;

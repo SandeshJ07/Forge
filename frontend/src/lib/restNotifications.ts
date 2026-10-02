@@ -19,7 +19,7 @@ export type RestAlertPermission = 'granted' | 'denied' | 'default' | 'unsupporte
 const CHANNEL = 'rest-timer';
 // Forge's own chime (bundled via the expo-notifications plugin in app.json), so it sounds the same
 // with the app closed as it does in the app.
-const SOUND = 'rest-done.wav';
+const SOUND = 'rest_done.wav';
 let scheduledId: string | null = null;
 let scheduledFor: number | null = null;
 let initialised = false;
