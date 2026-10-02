@@ -11,7 +11,9 @@ import { AddMeasurementForm, defaultUnitFor } from '@/components/AddMeasurementF
 import { MeasurementTargetEditor } from '@/components/MeasurementTargetEditor';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUnitStore } from '@/stores/useUnitStore';
-import { convertMeasurement } from '@/lib/measurementUnits';
+import { convertMeasurement, formatMeasurement } from '@/lib/measurementUnits';
+import { PROGRESS_RANGES, useProgressRangeStore } from '@/stores/useProgressRangeStore';
+import { formatDay } from '@/lib/format';
 import { MeasurementHistory } from '@/components/MeasurementHistory';
 import { ProgressPhotoGrid } from '@/components/ProgressPhotoGrid';
 import { useAddProgressPhoto, useMeasurements, useMeasurementTypes, useProgressPhotos } from '@/hooks/useMeasurements';
@@ -38,6 +40,19 @@ export default function MeasurementsScreen() {
   const chartMeasurements = (measurements ?? []).map((m) =>
     m.unit === chartUnit ? m : { ...m, value: convertMeasurement(m.value, m.unit, chartUnit), unit: chartUnit }
   );
+  // Only the chosen period is charted (15 days unless the user picked another range).
+  const rangeDays = useProgressRangeStore((s) => s.days);
+  const setRangeDays = useProgressRangeStore((s) => s.setDays);
+  const today = new Date();
+  const rangeStart =
+    rangeDays == null ? null : new Date(today.getFullYear(), today.getMonth(), today.getDate() - (rangeDays - 1)).getTime();
+  const rangeMeasurements =
+    rangeStart == null ? chartMeasurements : chartMeasurements.filter((m) => dayStart(m.date) >= rangeStart);
+  const rangeLabel = PROGRESS_RANGES.find((r) => r.days === rangeDays)?.label.toLowerCase() ?? 'all time';
+  const latestOverall = chartMeasurements[chartMeasurements.length - 1];
+  const emptyText = latestOverall
+    ? `No entries in the last ${rangeLabel}. Your latest was ${formatMeasurement(latestOverall.value)} ${chartUnit} on ${formatDay(latestOverall.date)} — pick a longer range to see it.`
+    : undefined;
   const savedTarget = profile?.measurement_targets?.[selectedType];
   const target = savedTarget ? convertMeasurement(savedTarget.value, savedTarget.unit, chartUnit) : null;
   const typeLabel = labelFor(selectedType);
@@ -61,19 +76,31 @@ export default function MeasurementsScreen() {
       </ChipScroller>
 
       <Card style={styles.chartCard}>
-        <MeasurementChart measurements={chartMeasurements} unit={chartUnit} label={typeLabel} target={target} />
+        <ChipScroller>
+          {PROGRESS_RANGES.map((r) => (
+            <Chip key={r.label} label={r.label} selected={rangeDays === r.days} onPress={() => setRangeDays(r.days)} />
+          ))}
+        </ChipScroller>
+        <MeasurementChart
+          measurements={rangeMeasurements}
+          unit={chartUnit}
+          label={typeLabel}
+          target={target}
+          rangeStart={rangeStart}
+          emptyText={emptyText}
+        />
         <View style={styles.divider} />
         <MeasurementTargetEditor type={selectedType} unit={chartUnit} label={typeLabel.toLowerCase()} />
       </Card>
 
       <Card>
-        <Text style={styles.cardTitle}>History</Text>
-        <MeasurementHistory key={selectedType} measurements={measurements ?? []} />
+        <Text style={styles.cardTitle}>Add today's {typeLabel.toLowerCase()}</Text>
+        <AddMeasurementForm type={selectedType} />
       </Card>
 
       <Card>
-        <Text style={styles.cardTitle}>Add today's {typeLabel.toLowerCase()}</Text>
-        <AddMeasurementForm type={selectedType} />
+        <Text style={styles.cardTitle}>History</Text>
+        <MeasurementHistory key={selectedType} measurements={measurements ?? []} />
       </Card>
 
       {FEATURES.progressPhotos ? (
@@ -92,6 +119,12 @@ export default function MeasurementsScreen() {
       ) : null}
     </ScreenContainer>
   );
+}
+
+/** "2026-09-24" → local midnight (it's a calendar day, not a UTC instant). */
+function dayStart(date: string): number {
+  const [y, m, d] = date.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
 }
 
 function labelFor(type: MeasurementType): string {

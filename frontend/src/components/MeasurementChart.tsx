@@ -13,6 +13,10 @@ interface MeasurementChartProps {
   label: string;
   /** Target in `unit`, drawn as a dashed baseline. */
   target?: number | null;
+  /** Start of the shown period (epoch ms); the x-axis then runs from here to today. Omit to fit the entries. */
+  rangeStart?: number | null;
+  /** Shown instead of the chart when there are no entries to plot. */
+  emptyText?: string;
 }
 
 const HEIGHT = 220;
@@ -43,13 +47,13 @@ function shortDate(ms: number): string {
 }
 
 /** A measurement's trend: headline metrics, then a dated line chart with labelled axes and the target as a baseline. */
-export function MeasurementChart({ measurements, unit, label, target }: MeasurementChartProps) {
+export function MeasurementChart({ measurements, unit, label, target, rangeStart, emptyText }: MeasurementChartProps) {
   const [width, setWidth] = useState(0);
 
   if (!measurements.length) {
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyText}>No entries yet. Add your first one below to start tracking.</Text>
+        <Text style={styles.emptyText}>{emptyText ?? 'No entries yet. Add your first one below to start tracking.'}</Text>
       </View>
     );
   }
@@ -62,8 +66,11 @@ export function MeasurementChart({ measurements, unit, label, target }: Measurem
 
   // Scales: x by date, y over the values and the target, with a little headroom.
   const xs = measurements.map((m) => dayMs(m.date));
-  let xMin = Math.min(...xs);
-  let xMax = Math.max(...xs);
+  const today = new Date();
+  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  // With a chosen period the axis shows all of it, up to today; otherwise it fits the entries.
+  let xMin = rangeStart != null ? Math.min(rangeStart, ...xs) : Math.min(...xs);
+  let xMax = rangeStart != null ? Math.max(todayMs, ...xs) : Math.max(...xs);
   if (xMax === xMin) {
     xMin -= DAY_MS;
     xMax += DAY_MS;
