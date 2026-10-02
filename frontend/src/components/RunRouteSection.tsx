@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Card } from '@/components/ui/Card';
@@ -85,6 +85,13 @@ export function RunRouteSection({ workoutId }: { workoutId: string }) {
 
 function ElevationChart({ profile, imperial }: { profile: number[][]; imperial: boolean }) {
   const [width, setWidth] = useState(0);
+  const boxRef = useRef<View>(null);
+  // On the web, onLayout can miss the first measurement; read the box directly too.
+  useLayoutEffect(() => {
+    const node = boxRef.current as unknown as { getBoundingClientRect?: () => DOMRect } | null;
+    const measured = node?.getBoundingClientRect?.().width;
+    if (measured && Math.round(measured) !== Math.round(width)) setWidth(measured);
+  });
   const height = 90;
   const alts = profile.map((p) => p[1]);
   const minAlt = Math.min(...alts);
@@ -99,7 +106,7 @@ function ElevationChart({ profile, imperial }: { profile: number[][]; imperial: 
   const unit = imperial ? 'ft' : 'm';
   const show = (m: number) => Math.round(imperial ? m * 3.28084 : m);
   return (
-    <View onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)} accessibilityLabel={`Elevation from ${show(minAlt)} to ${show(maxAlt)} ${unit}`}>
+    <View ref={boxRef} onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)} accessibilityLabel={`Elevation from ${show(minAlt)} to ${show(maxAlt)} ${unit}`}>
       {width ? (
         <Svg width={width} height={height}>
           <Path d={path} fill={colors.primaryMuted} stroke={colors.primary} strokeWidth={1.5} />

@@ -12,7 +12,8 @@ import { MeasurementTargetEditor } from '@/components/MeasurementTargetEditor';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUnitStore } from '@/stores/useUnitStore';
 import { convertMeasurement, formatMeasurement } from '@/lib/measurementUnits';
-import { PROGRESS_RANGES, useProgressRangeStore } from '@/stores/useProgressRangeStore';
+import { rangeLabel, useProgressRangeStore } from '@/stores/useProgressRangeStore';
+import { RangePicker } from '@/components/RangePicker';
 import { formatDay } from '@/lib/format';
 import { MeasurementHistory } from '@/components/MeasurementHistory';
 import { ProgressPhotoGrid } from '@/components/ProgressPhotoGrid';
@@ -48,10 +49,10 @@ export default function MeasurementsScreen() {
     rangeDays == null ? null : new Date(today.getFullYear(), today.getMonth(), today.getDate() - (rangeDays - 1)).getTime();
   const rangeMeasurements =
     rangeStart == null ? chartMeasurements : chartMeasurements.filter((m) => dayStart(m.date) >= rangeStart);
-  const rangeLabel = PROGRESS_RANGES.find((r) => r.days === rangeDays)?.label.toLowerCase() ?? 'all time';
+  const periodPhrase = rangeDays == null ? undefined : `in the ${rangeLabel(rangeDays).toLowerCase()}`;
   const latestOverall = chartMeasurements[chartMeasurements.length - 1];
   const emptyText = latestOverall
-    ? `No entries in the last ${rangeLabel}. Your latest was ${formatMeasurement(latestOverall.value)} ${chartUnit} on ${formatDay(latestOverall.date)} — pick a longer range to see it.`
+    ? `No entries in the ${rangeLabel(rangeDays).toLowerCase()}. Your latest was ${formatMeasurement(latestOverall.value)} ${chartUnit} on ${formatDay(latestOverall.date)} — pick a longer period to see it.`
     : undefined;
   const savedTarget = profile?.measurement_targets?.[selectedType];
   const target = savedTarget ? convertMeasurement(savedTarget.value, savedTarget.unit, chartUnit) : null;
@@ -76,11 +77,6 @@ export default function MeasurementsScreen() {
       </ChipScroller>
 
       <Card style={styles.chartCard}>
-        <ChipScroller>
-          {PROGRESS_RANGES.map((r) => (
-            <Chip key={r.label} label={r.label} selected={rangeDays === r.days} onPress={() => setRangeDays(r.days)} />
-          ))}
-        </ChipScroller>
         <MeasurementChart
           measurements={rangeMeasurements}
           unit={chartUnit}
@@ -88,6 +84,8 @@ export default function MeasurementsScreen() {
           target={target}
           rangeStart={rangeStart}
           emptyText={emptyText}
+          periodPhrase={periodPhrase}
+          headerRight={<RangePicker days={rangeDays} onChange={setRangeDays} />}
         />
         <View style={styles.divider} />
         <MeasurementTargetEditor type={selectedType} unit={chartUnit} label={typeLabel.toLowerCase()} />

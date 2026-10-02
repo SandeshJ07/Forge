@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import type { Measurement } from '@/types/database';
 import { formatDay } from '@/lib/format';
 import { formatMeasurement } from '@/lib/measurementUnits';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
 
 interface MeasurementChartProps {
   measurements: Measurement[];
@@ -17,6 +17,10 @@ interface MeasurementChartProps {
   rangeStart?: number | null;
   /** Shown instead of the chart when there are no entries to plot. */
   emptyText?: string;
+  /** e.g. "in the last 15 days" — how the change since the first shown entry is described. */
+  periodPhrase?: string;
+  /** Top-right of the header, e.g. the period picker. */
+  headerRight?: ReactNode;
 }
 
 const HEIGHT = 220;
@@ -46,14 +50,34 @@ function shortDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/** A measurement's trend: headline metrics, then a dated line chart with labelled axes and the target as a baseline. */
-export function MeasurementChart({ measurements, unit, label, target, rangeStart, emptyText }: MeasurementChartProps) {
+/** A measurement's trend: the latest value and change over the period, then a dated line chart with labelled axes and the target as a baseline. */
+export function MeasurementChart({
+  measurements,
+  unit,
+  label,
+  target,
+  rangeStart,
+  emptyText,
+  periodPhrase,
+  headerRight,
+}: MeasurementChartProps) {
   const [width, setWidth] = useState(0);
+  const chartRef = useRef<View>(null);
+  // On the web, onLayout can miss the first measurement, leaving the chart blank; read the
+  // box directly after each render as well (a View's ref is its DOM element there).
+  useLayoutEffect(() => {
+    const node = chartRef.current as unknown as { getBoundingClientRect?: () => DOMRect } | null;
+    const measured = node?.getBoundingClientRect?.().width;
+    if (measured && Math.round(measured) !== Math.round(width)) setWidth(measured);
+  });
 
   if (!measurements.length) {
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyText}>{emptyText ?? 'No entries yet. Add your first one below to start tracking.'}</Text>
+      <View>
+        {headerRight ? <View style={styles.headerRightOnly}>{headerRight}</View> : null}
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{emptyText ?? 'No entries yet. Add your first one below to start tracking.'}</Text>
+        </View>
       </View>
     );
   }
@@ -100,26 +124,32 @@ export function MeasurementChart({ measurements, unit, label, target, rangeStart
 
   return (
     <View>
-      <View style={styles.metrics}>
-        <Metric label="Latest" value={`${formatMeasurement(latest.value)} ${unit}`} hint={formatDay(latest.date)} />
-        <Metric
-          label="Change"
-          value={`${change > 0 ? '+' : change < 0 ? '−' : ''}${formatMeasurement(Math.abs(change))} ${unit}`}
-          hint={`since ${formatDay(first.date)}`}
-        />
-        <Metric label="Lowest" value={`${formatMeasurement(Math.min(...values))} ${unit}`} />
-        <Metric label="Highest" value={`${formatMeasurement(Math.max(...values))} ${unit}`} />
-        {target != null && toGo != null ? (
-          <Metric
-            label="To target"
-            value={Math.abs(toGo) < 0.05 ? 'Reached 🎉' : `${toGo > 0 ? '+' : '−'}${formatMeasurement(Math.abs(toGo))} ${unit}`}
-            hint={`target ${formatMeasurement(target)} ${unit}`}
-            highlight
-          />
-        ) : null}
+      <View style={styles.header}>
+        <View style={styles.flex}>
+          <Text style={styles.latest}>
+            {formatMeasurement(latest.value)} <Text style={styles.latestUnit}>{unit}</Text>
+          </Text>
+          <Text style={styles.summary}>
+            {measurements.length > 1
+              ? `${change > 0 ? '+' : change < 0 ? '−' : '±'}${formatMeasurement(Math.abs(change))} ${unit} ${periodPhrase ?? `since ${formatDay(first.date)}`}`
+              : `On ${formatDay(latest.date)}`}
+            {target != null && toGo != null ? (
+              <Text style={styles.summaryTarget}>
+                {' · '}
+                {Math.abs(toGo) < 0.05 ? 'Target reached 🎉' : `${formatMeasurement(Math.abs(toGo))} ${unit} to target`}
+              </Text>
+            ) : null}
+          </Text>
+        </View>
+        {headerRight}
       </View>
 
-      <View onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)} accessible accessibilityLabel={summary}>
+      <View
+        ref={chartRef}
+        onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}
+        accessible
+        accessibilityLabel={summary}
+      >
         {width ? (
           <Svg width={width} height={HEIGHT}>
             {/* Y axis title */}
@@ -213,41 +243,16 @@ export function MeasurementChart({ measurements, unit, label, target, rangeStart
   );
 }
 
-function Metric({ label, value, hint, highlight = false }: { label: string; value: string; hint?: string; highlight?: boolean }) {
-  return (
-    <View style={[styles.metric, highlight && styles.metricHighlight]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, highlight && styles.metricValueHighlight]} numberOfLines={1}>
-        {value}
-      </Text>
-      {hint ? (
-        <Text style={styles.metricHint} numberOfLines={1}>
-          {hint}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   emptyState: { paddingVertical: spacing.lg, alignItems: 'center' },
   emptyText: { color: colors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
   hint: { color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: spacing.xs },
-  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
-  metric: {
-    flexGrow: 1,
-    flexBasis: '30%',
-    minWidth: 90,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surfaceAlt,
-    gap: 1,
-  },
-  metricHighlight: { borderWidth: 1, borderColor: colors.success },
-  metricLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+  flex: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm },
+  headerRightOnly: { alignItems: 'flex-end' },
+  latest: { color: colors.text, fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  latestUnit: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
   // Neutral on purpose: whether "up" is good depends on the goal and the measurement.
-  metricValue: { color: colors.text, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  metricValueHighlight: { color: colors.success },
-  metricHint: { color: colors.textMuted, fontSize: 11 },
+  summary: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  summaryTarget: { color: colors.success, fontWeight: '700' },
 });
