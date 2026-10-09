@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useExercise, useExerciseFeedbackMap, useSetExerciseFeedback } from '@/hooks/useExercises';
 import { MuscleMap } from '@/components/MuscleMap';
+import { ExerciseAlternativesSheet } from '@/components/ExerciseAlternativesSheet';
 import { muscleFills } from '@/lib/muscleMap';
 import type { Exercise, ExerciseFeedbackRating } from '@/types/database';
 import { colors, radii, spacing } from '@/constants/theme';
@@ -41,6 +42,8 @@ export default function ExerciseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: exercise, isLoading } = useExercise(id);
   const [section, setSection] = useState<Section>('about');
+  const [alternativesOpen, setAlternativesOpen] = useState(false);
+  const router = useRouter();
 
   if (isLoading || !exercise) {
     return (
@@ -60,6 +63,26 @@ export default function ExerciseDetailScreen() {
           {[listLabel(exercise.muscle_groups), exercise.equipment, exercise.difficulty].filter(Boolean).join(' · ')}
         </Text>
       </View>
+
+      <Pressable
+        onPress={() => setAlternativesOpen(true)}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.alternativesButton, pressed && styles.pressed]}
+      >
+        <Ionicons name="swap-horizontal" size={16} color={colors.primary} />
+        <Text style={styles.alternativesText}>See alternatives</Text>
+      </Pressable>
+      <ExerciseAlternativesSheet
+        visible={alternativesOpen}
+        exerciseId={exercise.id}
+        exerciseName={exercise.name}
+        hint="Exercises that work the same muscles. Tap one to open it."
+        onClose={() => setAlternativesOpen(false)}
+        onPick={(alternative) => {
+          setAlternativesOpen(false);
+          router.push(`/exercise/${alternative.id}`);
+        }}
+      />
 
       <View style={styles.tabs} accessibilityRole="tablist">
         {SECTIONS.map((s) => {
@@ -352,6 +375,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
+  alternativesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    cursor: 'pointer',
+  },
+  alternativesText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  pressed: { opacity: 0.75 },
   feedbackCard: {
     gap: spacing.sm,
   },

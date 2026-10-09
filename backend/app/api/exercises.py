@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import distinct, func, or_, select
+from sqlalchemy import ARRAY, String, cast, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -11,6 +11,19 @@ from app.models.user import User
 from app.schemas.exercise import ExerciseFeedbackResponse, ExerciseResponse, SetExerciseFeedbackRequest
 
 router = APIRouter(prefix="/exercises", tags=["exercises"])
+
+# Words too common in exercise names to say two movements are alike.
+# Equipment words are left out too: a different tool is often why you want an alternative.
+_NAME_NOISE = {
+    "with", "the", "and", "one", "arm", "single", "grip", "wide", "close", "alternating", "alternate",
+    "barbell", "dumbbell", "dumbbells", "cable", "machine", "smith", "kettlebell", "kettlebells",
+    "band", "bands", "bar", "body", "only", "weighted", "assisted", "lever",
+}
+
+
+def _name_words(name: str) -> set[str]:
+    cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in name)
+    return {w for w in cleaned.split() if len(w) > 2 and w not in _NAME_NOISE}
 
 
 @router.get("", response_model=list[ExerciseResponse])
@@ -51,6 +64,49 @@ def list_muscle_groups(db: Session = Depends(get_db)) -> list[str]:
 def list_equipment_options(db: Session = Depends(get_db)) -> list[str]:
     rows = db.execute(select(distinct(Exercise.equipment)).where(Exercise.equipment.is_not(None))).scalars().all()
     return sorted(rows)
+
+
+@router.get("/{exercise_id}/alternatives", response_model=list[ExerciseResponse])
+def list_alternatives(
+    exercise_id: UUID,
+    limit: int = Query(default=12, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> list[Exercise]:
+    """
+    Exercises that train the same thing: same primary muscle first, then the most
+    shared muscles (primary or secondary), close variants of the movement (shared
+    name words), the same category and the same way of logging a set. Equipment is ignored on purpose: a different machine or
+    free weight is usually the reason to look for an alternative.
+    """
+    exercise = db.get(Exercise, exercise_id)
+    if exercise is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exercise not found")
+    primary = set(exercise.muscle_groups or [])
+    if not primary:
+        return []
+    worked = primary | set(exercise.secondary_muscle_groups or [])
+    words = _name_words(exercise.name)
+    candidates = (
+        db.query(Exercise)
+        .filter(Exercise.id != exercise.id, Exercise.muscle_groups.op("&&")(cast(list(primary), ARRAY(String))))
+        .all()
+    )
+
+    def score(other: Exercise) -> tuple[float, str]:
+        other_primary = set(other.muscle_groups or [])
+        other_worked = other_primary | set(other.secondary_muscle_groups or [])
+        points = 4 * len(primary & other_primary) + len(worked & other_worked)
+        # Hitting muscles the original doesn't is a worse substitute.
+        points -= 0.5 * len(other_primary - primary)
+        if other.category and other.category == exercise.category:
+            points += 1
+        if other.tracking_type == exercise.tracking_type:
+            points += 1
+        # Sharing words like "bench press" or "row" marks a close variant of the same movement.
+        points += 1.5 * len(words & _name_words(other.name))
+        return (-points, other.name)
+
+    return sorted(candidates, key=score)[:limit]
 
 
 @router.get("/{exercise_id}", response_model=ExerciseResponse)

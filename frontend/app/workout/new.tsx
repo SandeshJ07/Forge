@@ -10,9 +10,11 @@ import { TextField } from '@/components/ui/TextField';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ExerciseListItem } from '@/components/ExerciseListItem';
+import { ExerciseAlternativesSheet } from '@/components/ExerciseAlternativesSheet';
+import { Select } from '@/components/ui/Select';
 import { formatClock, useNow } from '@/components/WorkoutSessionOverlay';
 import { TimeEditSheet } from '@/components/TimeEditSheet';
-import { useExercises } from '@/hooks/useExercises';
+import { useEquipmentOptions, useExercises, useMuscleGroupOptions } from '@/hooks/useExercises';
 import { useLatestPlan } from '@/hooks/usePlans';
 import { useLogManualWorkout } from '@/hooks/useWorkouts';
 import { usePersonalRecords } from '@/hooks/usePersonalRecords';
@@ -33,7 +35,7 @@ import {
 import { primeRestChime } from '@/lib/restChime';
 import { getRestAlertPermission, requestRestAlertPermission, type RestAlertPermission } from '@/lib/restNotifications';
 import { useRestAlertStore } from '@/stores/useRestAlertStore';
-import { formatWeight, LB_PER_KG } from '@/lib/format';
+import { formatWeight, humanize, LB_PER_KG } from '@/lib/format';
 import {
   TRACKING_FIELDS,
   distanceUnit,
@@ -95,6 +97,10 @@ export default function LogWorkoutScreen() {
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [muscleGroup, setMuscleGroup] = useState<string | undefined>();
+  const [equipment, setEquipment] = useState<string | undefined>();
+  // The exercise whose alternatives are being shown (by its key in the session).
+  const [alternativesFor, setAlternativesFor] = useState<string | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [suggestionExpanded, setSuggestionExpanded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -105,10 +111,16 @@ export default function LogWorkoutScreen() {
   const [summary, setSummary] = useState<{ sets: number; duration: number | null; prs: string[] } | null>(null);
 
   const query = search.trim();
+  const filtered = Boolean(muscleGroup || equipment);
+  // Something to list once the user has typed enough or picked a filter.
+  const canList = query.length >= MIN_SEARCH_CHARS || filtered;
   const { data: results, isFetching: searching } = useExercises(
-    { search: query || undefined },
-    { enabled: searchOpen && query.length >= MIN_SEARCH_CHARS }
+    { search: query.length >= MIN_SEARCH_CHARS ? query : undefined, muscleGroup, equipment },
+    { enabled: searchOpen && canList }
   );
+  const { data: muscleGroups } = useMuscleGroupOptions();
+  const { data: equipmentOptions } = useEquipmentOptions();
+  const alternativesExercise = alternativesFor ? session?.exercises.find((e) => e.key === alternativesFor) : undefined;
 
   const bestByExercise = useMemo(
     () => new Map((records ?? []).map((r) => [r.exercise_id, Number(r.best_weight_kg)])),
@@ -152,7 +164,13 @@ export default function LogWorkoutScreen() {
   function addFromSearch(exercise: Exercise) {
     const timed = TRACKING_FIELDS[exercise.tracking_type].time;
     store.addExercise({ exerciseId: exercise.id, name: exercise.name, tracking: exercise.tracking_type, sets: timed ? 1 : 3 });
+    closeSearch();
+  }
+
+  function closeSearch() {
     setSearch('');
+    setMuscleGroup(undefined);
+    setEquipment(undefined);
     setSearchOpen(false);
   }
 
@@ -407,6 +425,7 @@ export default function LogWorkoutScreen() {
             onRemove={() => store.removeExercise(ex.key)}
             onRestChange={(seconds) => store.setRestSeconds(ex.key, seconds)}
             onInfo={ex.exerciseId ? () => router.push(`/exercise/${ex.exerciseId}`) : undefined}
+            onAlternatives={ex.exerciseId ? () => setAlternativesFor(ex.key) : undefined}
           />
         ))}
 
@@ -414,7 +433,7 @@ export default function LogWorkoutScreen() {
           <Card style={styles.card}>
             <View style={styles.searchHead}>
               <Text style={styles.cardTitle}>Add an exercise</Text>
-              <Text style={styles.link} onPress={() => { setSearchOpen(false); setSearch(''); }} accessibilityRole="button">
+              <Text style={styles.link} onPress={closeSearch} accessibilityRole="button">
                 Cancel
               </Text>
             </View>
@@ -430,15 +449,41 @@ export default function LogWorkoutScreen() {
               />
               <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
             </View>
-            {/* Nothing is listed until the user types: this is a search, not a browser. */}
-            {query.length < MIN_SEARCH_CHARS ? null : searching && !results ? (
+            <View style={styles.filterRow}>
+              <Select
+                label="Muscle"
+                allLabel="All muscles"
+                options={(muscleGroups ?? []).map((m) => ({ value: m, label: humanize(m) }))}
+                value={muscleGroup}
+                onChange={setMuscleGroup}
+              />
+              <Select
+                label="Equipment"
+                allLabel="All equipment"
+                options={(equipmentOptions ?? []).map((e) => ({ value: e, label: humanize(e) }))}
+                value={equipment}
+                onChange={setEquipment}
+              />
+            </View>
+            {/* Nothing is listed until the user types or picks a filter: the full library is too long to scroll. */}
+            {!canList ? null : searching && !results ? (
               <Text style={styles.muted}>Searching…</Text>
             ) : results?.length ? (
-              results.slice(0, SEARCH_RESULT_LIMIT).map((exercise) => (
-                <ExerciseListItem key={exercise.id} exercise={exercise} onPress={() => addFromSearch(exercise)} />
-              ))
+              <>
+                {results.slice(0, SEARCH_RESULT_LIMIT).map((exercise) => (
+                  <ExerciseListItem key={exercise.id} exercise={exercise} onPress={() => addFromSearch(exercise)} />
+                ))}
+                {results.length > SEARCH_RESULT_LIMIT ? (
+                  <Text style={styles.muted}>
+                    Showing {SEARCH_RESULT_LIMIT} of {results.length}. Type or filter to narrow it down.
+                  </Text>
+                ) : null}
+              </>
             ) : (
-              <Text style={styles.muted}>No exercises match “{query}”.</Text>
+              <Text style={styles.muted}>
+                {query.length >= MIN_SEARCH_CHARS ? `No exercises match “${query}”` : 'No exercises match'}
+                {filtered ? ' with these filters.' : '.'}
+              </Text>
             )}
           </Card>
         ) : (
@@ -464,6 +509,32 @@ export default function LogWorkoutScreen() {
         ) : null}
         {rest ? <View style={{ height: offerAlerts ? 170 : 130 }} /> : null}
       </ScreenContainer>
+
+      <ExerciseAlternativesSheet
+
+        visible={Boolean(alternativesExercise)}
+
+        exerciseId={alternativesExercise?.exerciseId ?? null}
+
+        exerciseName={alternativesExercise?.name ?? ''}
+
+        hint="Tap one to swap it in. Your sets, target and rest stay as they are."
+
+        onClose={() => setAlternativesFor(null)}
+
+        onPick={(exercise) => {
+
+          if (alternativesFor) {
+
+            store.replaceExercise(alternativesFor, { exerciseId: exercise.id, name: exercise.name, tracking: exercise.tracking_type });
+
+          }
+
+          setAlternativesFor(null);
+
+        }}
+
+      />
 
       <PlanGroupsSheet
         visible={groupsOpen}
@@ -648,6 +719,7 @@ function ExerciseCard({
   onRemove,
   onRestChange,
   onInfo,
+  onAlternatives,
 }: {
   exercise: SessionExercise;
   now: number;
@@ -667,6 +739,8 @@ function ExerciseCard({
   onRestChange: (seconds: number) => void;
   /** Opens the exercise's how-to page; omitted for exercises not in the library. */
   onInfo?: () => void;
+  /** Lists exercises that work the same muscles, to swap one in; omitted for exercises not in the library. */
+  onAlternatives?: () => void;
 }) {
   const fields = TRACKING_FIELDS[exercise.tracking];
   const distUnit = distanceUnit(exercise.tracking, unitSystem);
@@ -709,6 +783,17 @@ function ExerciseCard({
                 style={styles.infoButton}
               >
                 <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+              </Pressable>
+            ) : null}
+            {onAlternatives ? (
+              <Pressable
+                onPress={onAlternatives}
+                accessibilityRole="button"
+                accessibilityLabel={`Alternatives to ${exercise.name}`}
+                hitSlop={10}
+                style={styles.infoButton}
+              >
+                <Ionicons name="swap-horizontal" size={19} color={colors.primary} />
               </Pressable>
             ) : null}
           </View>
@@ -1022,6 +1107,7 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   checkDone: { backgroundColor: colors.success, borderColor: colors.success },
+  filterRow: { flexDirection: 'row', gap: spacing.sm },
   searchHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   searchInput: { paddingLeft: 42 },
   searchIcon: { position: 'absolute', left: spacing.md, top: 17 },

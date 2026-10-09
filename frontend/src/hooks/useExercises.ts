@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchDistinctEquipment,
   fetchDistinctMuscleGroups,
+  fetchExerciseAlternatives,
   fetchExerciseById,
   fetchExerciseFeedbackMap,
   fetchExercises,
@@ -24,6 +25,16 @@ export function useExercise(id: string | undefined) {
     queryKey: ['exercise', id],
     queryFn: () => fetchExerciseById(id as string),
     enabled: Boolean(id),
+  });
+}
+
+export function useExerciseAlternatives(id: string | null | undefined, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['exercise-alternatives', id],
+    queryFn: () => fetchExerciseAlternatives(id as string),
+    enabled: Boolean(id) && (options.enabled ?? true),
+    // The catalog rarely changes.
+    staleTime: 60 * 60 * 1000,
   });
 }
 

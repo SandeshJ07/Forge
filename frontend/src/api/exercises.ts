@@ -23,6 +23,11 @@ export async function fetchExerciseById(id: string): Promise<Exercise | null> {
   return apiClient.get<Exercise>(`/exercises/${id}`);
 }
 
+/** Exercises that train the same muscles, best substitutes first. */
+export async function fetchExerciseAlternatives(id: string): Promise<Exercise[]> {
+  return apiClient.get<Exercise[]>(`/exercises/${id}/alternatives`);
+}
+
 export async function fetchExerciseFeedbackMap(): Promise<Record<string, ExerciseFeedbackRating>> {
   const rows = await apiClient.get<UserExerciseFeedback[]>('/exercises/feedback/all');
   return Object.fromEntries(rows.map((row) => [row.exercise_id, row.rating]));

@@ -112,6 +112,11 @@ interface SessionState {
   startWorkout: (title: string, exercises: NewExercise[]) => void;
   addPlanGroup: (planId: string, groupIndex: number, group: PlanGroup) => void;
   removeExercise: (exerciseKey: string) => void;
+  /**
+   * Swaps in a different exercise at the same spot, keeping the target, rest and set count.
+   * Entered sets carry over when both are logged the same way; otherwise the sets start fresh.
+   */
+  replaceExercise: (exerciseKey: string, next: { exerciseId: string; name: string; tracking?: TrackingType | null }) => void;
   /** Moves an exercise up (-1) or down (+1) in the workout. */
   moveExercise: (exerciseKey: string, delta: -1 | 1) => void;
   /** This session only — the plan's rest time is left as is. */
@@ -273,6 +278,20 @@ export const useWorkoutSessionStore = create<SessionState>()(
 
         removeExercise: (exerciseKey) =>
           update((s) => ({ ...s, exercises: s.exercises.filter((e) => e.key !== exerciseKey) })),
+
+        replaceExercise: (exerciseKey, next) =>
+          updateExercise(exerciseKey, (ex) => {
+            const tracking = resolveTracking(next.tracking, next.name);
+            const keepSets = tracking === ex.tracking;
+            return {
+              ...ex,
+              exerciseId: next.exerciseId,
+              name: next.name,
+              tracking,
+              sets: keepSets ? ex.sets : ex.sets.map(() => emptySet()),
+              startedAt: keepSets ? ex.startedAt : undefined,
+            };
+          }),
 
         moveExercise: (exerciseKey, delta) =>
           update((s) => {
