@@ -9,7 +9,8 @@ import { PlanView } from '@/components/PlanView';
 import { useAcceptPlan, useDismissPlan, useLatestPlan, usePendingPlan, useUpdatePlanContent } from '@/hooks/usePlans';
 import { ApiError } from '@/lib/apiClient';
 import { formatDayTime } from '@/lib/format';
-import type { PlanPayload } from '@/types/database';
+import type { PlanGroup, PlanPayload } from '@/types/database';
+import { planGroups } from '@/lib/planGroups';
 import { colors, spacing } from '@/constants/theme';
 
 /**
@@ -26,18 +27,23 @@ export default function PlanReviewScreen() {
   const updatePlan = useUpdatePlanContent();
 
   const [draft, setDraft] = useState<PlanPayload | null>(null);
-  const [editing, setEditing] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Start each review from the saved plan (a new pending plan replaces any unsaved draft).
   useEffect(() => {
     setDraft(pending?.plan ?? null);
-    setEditing(false);
   }, [pending?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = Boolean(pending && draft && draft !== pending.plan);
   const busy = acceptPlan.isPending || dismissPlan.isPending || updatePlan.isPending;
+
+  // A saved day changes the draft only; "Use this plan" / "Save changes for later" store it.
+  function saveDay(groupIndex: number, group: PlanGroup) {
+    if (!draft) return;
+    const groups = planGroups(draft).map((g, i) => (i === groupIndex ? group : g));
+    setDraft({ ...draft, groups, days: undefined });
+  }
 
   function goToPlan() {
     router.replace('/plan');
@@ -53,7 +59,6 @@ export default function PlanReviewScreen() {
     try {
       const saved = await updatePlan.mutateAsync({ planId: pending.id, plan: draft });
       setDraft(saved.plan);
-      setEditing(false);
     } catch (err) {
       fail(err, 'Could not save your changes. Please try again.');
     }
@@ -124,20 +129,15 @@ export default function PlanReviewScreen() {
       </Card>
 
       <View style={styles.editBar}>
-        {editing ? (
-          <>
-            <Text style={[styles.muted, styles.flex]}>Editing — change sets, targets, rest and order, or add and remove exercises.</Text>
-            <Button label="Done" size="small" variant="secondary" onPress={() => setEditing(false)} />
-          </>
-        ) : (
-          <>
-            <Text style={[styles.muted, styles.flex]}>{dirty ? 'You have unsaved changes.' : 'Want to tweak something first?'}</Text>
-            <Button label="Edit plan" size="small" variant="secondary" onPress={() => setEditing(true)} />
-          </>
-        )}
+        <Ionicons name={dirty ? 'create' : 'create-outline'} size={16} color={dirty ? colors.warning : colors.textMuted} />
+        <Text style={[styles.muted, styles.flex]}>
+          {dirty
+            ? 'You have unsaved changes — use the plan or save them for later.'
+            : 'Want to tweak something first? Tap Edit on any day to change it.'}
+        </Text>
       </View>
 
-      <PlanView plan={draft} onChange={editing ? setDraft : undefined} />
+      <PlanView plan={draft} onSaveGroup={saveDay} />
 
       {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
