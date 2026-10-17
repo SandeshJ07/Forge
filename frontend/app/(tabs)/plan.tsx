@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
 import { PlanSectionSwitch } from '@/components/PlanSectionSwitch';
-import { useLatestPlan, usePendingPlan, usePlanGeneration } from '@/hooks/usePlans';
+import { useLatestPlan, usePendingPlan, usePlanGeneration, useUpdatePlanContent } from '@/hooks/usePlans';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { daysUntilPlanRefresh, isPlanRefreshDue, refreshIntervalDays, refreshPeriodText } from '@/lib/planRefresh';
 import { formatDay } from '@/lib/format';
@@ -23,6 +23,7 @@ import { colors, radii, spacing } from '@/constants/theme';
 export default function ExerciseGroupsScreen() {
   const router = useRouter();
   const { data: latestPlan, isLoading } = useLatestPlan();
+  const updatePlan = useUpdatePlanContent();
   const { data: pendingPlan } = usePendingPlan();
   const { data: profile } = useUserProfile();
   const { data: generation } = usePlanGeneration();
@@ -175,7 +176,21 @@ export default function ExerciseGroupsScreen() {
 
       {latestPlan ? (
         <>
-          <PlanView plan={latestPlan.plan} onStartGroup={handleStart} startLabel={startLabel} />
+          <PlanView
+            plan={latestPlan.plan}
+            onStartGroup={handleStart}
+            startLabel={startLabel}
+            onSaveGroup={(groupIndex, group) =>
+              updatePlan.mutateAsync({
+                planId: latestPlan.id,
+                plan: {
+                  ...latestPlan.plan,
+                  groups: planGroups(latestPlan.plan).map((g, i) => (i === groupIndex ? group : g)),
+                  days: undefined,
+                },
+              })
+            }
+          />
           {!refreshDue && daysUntil !== null ? (
             <Text style={[styles.hint, styles.centered]}>
               Next refresh reminder in {daysUntil} day{daysUntil === 1 ? '' : 's'}. You can change this in Settings.
