@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   acceptPlan,
+  aiEditPlanGroup,
   createCustomPlan,
   dismissPlan,
   fetchGenerationStatus,
@@ -12,7 +13,7 @@ import {
   generatePlan,
   updatePlanContent,
 } from '@/api/plans';
-import type { CustomPlanInput, PlanPayload, PlanPreferences } from '@/types/database';
+import type { CustomPlanInput, PlanGroup, PlanPayload, PlanPreferences } from '@/types/database';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 const POLL_MS = 3000;
@@ -156,5 +157,16 @@ export function useCreateCustomPlan() {
   return useMutation({
     mutationFn: (input: CustomPlanInput) => createCustomPlan(input),
     onSuccess: () => invalidatePlans(queryClient, userId),
+  });
+}
+
+/** AI rewrite of one plan day (not saved); refreshes the day-edit allowance shown in the editor. */
+export function useAiEditPlanGroup() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { planId: string; groupIndex: number; instruction: string; group: PlanGroup }) =>
+      aiEditPlanGroup(args.planId, args.groupIndex, args.instruction, args.group),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['plan-usage', userId] }),
   });
 }

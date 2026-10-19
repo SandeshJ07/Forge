@@ -3,6 +3,7 @@ import type {
   CustomPlanInput,
   GeneratedPlan,
   PlanGenerationStatus,
+  PlanGroup,
   PlanPayload,
   PlanPreferences,
   PlanUsage,
@@ -66,4 +67,18 @@ export async function dismissPlan(planId: string): Promise<GeneratedPlan> {
 /** Saves the user's own edits to a plan. */
 export async function updatePlanContent(planId: string, plan: PlanPayload): Promise<GeneratedPlan> {
   return apiClient.put<GeneratedPlan>(`/plans/${planId}/content`, { plan });
+}
+
+/**
+ * Asks the AI to rewrite one day of a plan per the instruction. Returns the new
+ * day without saving it — show it in the day editor and save it like any edit.
+ * `group` is the day as currently being edited (unsaved changes included).
+ */
+export async function aiEditPlanGroup(
+  planId: string,
+  groupIndex: number,
+  instruction: string,
+  group: PlanGroup
+): Promise<{ group: PlanGroup; remaining: number | null }> {
+  return apiClient.post(`/plans/${planId}/groups/${groupIndex}/ai-edit`, { instruction, group });
 }

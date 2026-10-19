@@ -83,3 +83,8 @@ export async function rateWorkout(
 ): Promise<void> {
   await apiClient.patch(`/workouts/${workoutId}`, fields);
 }
+
+/** Deletes a logged workout (its sets and any recorded route too); records from it are recalculated. */
+export async function deleteWorkout(workoutId: string): Promise<void> {
+  await apiClient.delete(`/workouts/${workoutId}`);
+}

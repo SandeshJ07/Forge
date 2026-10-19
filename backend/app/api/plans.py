@@ -12,6 +12,8 @@ from app.models.plan import GeneratedPlan
 from app.models.profile import UserProfile
 from app.models.user import User
 from app.schemas.plan import (
+    AiEditGroupRequest,
+    AiEditGroupResponse,
     CustomPlanRequest,
     GeneratePlanRequest,
     GeneratedPlanResponse,
@@ -24,10 +26,13 @@ from app.services.ai_providers import PROVIDER_NAMES
 from app.services.plan_generation import (
     NoAIKeyAvailable,
     PlanParseError,
+    ai_edit_group,
+    day_edits_used_today,
     finalize_plan_json,
     generate_plan_for_user,
     local_day_start,
     next_local_midnight,
+    record_day_edit,
     resolve_ai_access,
     shared_key_generations_since,
 )
@@ -224,7 +229,16 @@ def get_usage(
         used=used,
         remaining=None if limit is None else max(0, limit - used),
         resets_at=next_local_midnight(day_start),
+        **_day_edit_allowance(db, current_user.id, access.own_key),
     )
+
+
+def _day_edit_allowance(db: Session, user_id: UUID, own_key: bool) -> dict:
+    if own_key:
+        return {"day_edit_limit": None, "day_edits_remaining": None}
+    limit = settings.shared_key_daily_day_edit_limit
+    used = day_edits_used_today(db.get(UserProfile, user_id))
+    return {"day_edit_limit": limit, "day_edits_remaining": max(0, limit - used)}
 
 
 @router.get("/generation", response_model=PlanGenerationStatus)
@@ -323,3 +337,58 @@ def update_plan_content(
     db.commit()
     db.refresh(plan)
     return plan
+
+
+@router.post("/{plan_id}/groups/{group_index}/ai-edit", response_model=AiEditGroupResponse)
+async def ai_edit_plan_group(
+    plan_id: UUID,
+    group_index: int,
+    body: AiEditGroupRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AiEditGroupResponse:
+    """
+    Rewrites one day of a plan with AI, following the user's instruction ("swap squats
+    for leg press", "make it 45 minutes"). Returns the new day without saving it — the
+    app shows it in the day editor, and the user saves it like any other edit.
+    On the shared key it uses a separate daily allowance, not plan generations.
+    """
+    plan = _owned_ready_plan(db, plan_id, current_user.id)
+    groups = (plan.plan or {}).get("groups") or []
+    if not 0 <= group_index < len(groups):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="That day isn't in this plan")
+    group = body.group if body.group is not None else groups[group_index]
+
+    access = resolve_ai_access(db, current_user.id)
+    profile = None
+    if not access.own_key:
+        # Lock the profile row so two edits at once can't both slip under the allowance.
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).with_for_update().one_or_none()
+        if profile is None:
+            profile = UserProfile(user_id=current_user.id)
+            db.add(profile)
+            db.flush()
+        limit = settings.shared_key_daily_day_edit_limit
+        if day_edits_used_today(profile) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"You've used all {limit} AI day edits for today. They reset at midnight (UTC) — "
+                "or add your own API key in Settings for unlimited edits. You can still edit the day by hand.",
+            )
+        db.commit()  # release the lock during the (slow) AI call
+
+    try:
+        new_group = await ai_edit_group(db, current_user.id, access, plan.plan or {}, group_index, group, body.instruction)
+    except NoAIKeyAvailable as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    except (PlanParseError, AIRequestError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+
+    remaining = None
+    if profile is not None:
+        # Only a successful edit counts.
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).with_for_update().one()
+        record_day_edit(profile)
+        db.commit()
+        remaining = max(0, settings.shared_key_daily_day_edit_limit - day_edits_used_today(profile))
+    return AiEditGroupResponse(group=new_group, remaining=remaining)
