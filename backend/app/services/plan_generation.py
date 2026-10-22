@@ -26,7 +26,7 @@ from app.services.ai_providers import (
     provider_or_default,
     shared_key_for,
 )
-from app.services.plan_prompt import PersonalRecordSummary, PlanGenerationInput, build_plan_prompt
+from app.services.plan_prompt import PersonalRecordSummary, PlanGenerationInput, build_day_edit_prompt, build_plan_prompt
 from app.services.plan_summarize import summarize_workout_history
 
 settings = get_settings()
@@ -399,3 +399,68 @@ async def generate_plan_for_user(db: Session, user_id: UUID, preferences: dict |
         "model": model_used,
     }
     return plan_json, source_summary
+
+
+def day_edits_used_today(profile: UserProfile | None) -> int:
+    """AI day edits used today (UTC) on the shared key."""
+    if profile is None or profile.ai_day_edits_on != datetime.now(timezone.utc).date():
+        return 0
+    return profile.ai_day_edits_count or 0
+
+
+def record_day_edit(profile: UserProfile) -> None:
+    today = datetime.now(timezone.utc).date()
+    if profile.ai_day_edits_on != today:
+        profile.ai_day_edits_on = today
+        profile.ai_day_edits_count = 0
+    profile.ai_day_edits_count = (profile.ai_day_edits_count or 0) + 1
+
+
+def _day_summary(group: dict) -> str:
+    days = ", ".join(group.get("weekdays") or []) or "any day"
+    names = ", ".join(str(e.get("exercise_name", "")) for e in group.get("exercises") or [] if isinstance(e, dict))
+    focus = group.get("focus") or ""
+    return f"{group.get('name', 'Workout')} ({days}){': ' + focus if focus else ''} — {names or 'no exercises'}"
+
+
+async def ai_edit_group(
+    db: Session, user_id: UUID, access: AIAccess, plan_json: dict, group_index: int, group: dict, instruction: str
+) -> dict:
+    """
+    Asks the AI to rewrite one day of a plan per the athlete's instruction.
+    Returns the new day (normalised, exercises linked to the library); nothing is saved.
+    Its weekdays never take one that another day of the plan already has.
+    """
+    if not access.api_key:
+        raise NoAIKeyAvailable(
+            f"No {PROVIDER_NAMES[access.provider]} API key available. Add your own key in Settings, "
+            "switch AI provider, or configure a shared key on the server."
+        )
+    others = [g for i, g in enumerate(plan_json.get("groups") or []) if i != group_index and isinstance(g, dict)]
+    prompt_input = _build_prompt_input(db, user_id)
+    prompt = build_day_edit_prompt(
+        prompt_input,
+        plan_title=str(plan_json.get("title") or "Training plan"),
+        group_json=json.dumps(group, ensure_ascii=False),
+        other_days=[_day_summary(g) for g in others],
+        instruction=instruction,
+    )
+    text, _model = await generate_text(access.provider, access.api_key, prompt, max_tokens=3000)
+    try:
+        parsed = _parse_plan_json(text)
+    except (PlanParseError, ValueError):
+        raise PlanParseError("The AI's answer couldn't be read. Please try again, or rephrase your request.") from None
+    if isinstance(parsed, dict) and isinstance(parsed.get("groups"), list) and parsed["groups"]:
+        parsed = parsed["groups"][0]  # answered in the whole-plan shape
+    if not isinstance(parsed, dict):
+        raise PlanParseError("The AI's answer couldn't be read. Please try again.")
+
+    wrapper = {"groups": [parsed]}
+    _normalize_groups(wrapper)
+    if not wrapper["groups"]:
+        raise PlanParseError("The AI's version of this day had no exercises. Try rephrasing your request.")
+    new_group = wrapper["groups"][0]
+    taken = {d for g in others for d in (g.get("weekdays") or [])}
+    new_group["weekdays"] = [d for d in new_group["weekdays"] if d not in taken]
+    _attach_exercise_ids(db, wrapper)
+    return new_group

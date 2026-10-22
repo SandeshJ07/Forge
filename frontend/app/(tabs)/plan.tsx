@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
 import { PlanSectionSwitch } from '@/components/PlanSectionSwitch';
-import { useLatestPlan, usePendingPlan, usePlanGeneration, useUpdatePlanContent } from '@/hooks/usePlans';
+import { useAiEditPlanGroup, useLatestPlan, usePendingPlan, usePlanGeneration, usePlanUsage, useUpdatePlanContent } from '@/hooks/usePlans';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { daysUntilPlanRefresh, isPlanRefreshDue, refreshIntervalDays, refreshPeriodText } from '@/lib/planRefresh';
 import { formatDay } from '@/lib/format';
@@ -24,6 +24,8 @@ export default function ExerciseGroupsScreen() {
   const router = useRouter();
   const { data: latestPlan, isLoading } = useLatestPlan();
   const updatePlan = useUpdatePlanContent();
+  const aiEditGroup = useAiEditPlanGroup();
+  const { data: usage } = usePlanUsage();
   const { data: pendingPlan } = usePendingPlan();
   const { data: profile } = useUserProfile();
   const { data: generation } = usePlanGeneration();
@@ -190,6 +192,10 @@ export default function ExerciseGroupsScreen() {
                 },
               })
             }
+            onAiEditGroup={async (groupIndex, group, instruction) =>
+              (await aiEditGroup.mutateAsync({ planId: latestPlan.id, groupIndex, instruction, group })).group
+            }
+            aiEditsRemaining={usage?.day_edits_remaining}
           />
           {!refreshDue && daysUntil !== null ? (
             <Text style={[styles.hint, styles.centered]}>

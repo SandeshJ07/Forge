@@ -94,6 +94,32 @@ class PlanUsage(BaseModel):
     remaining: int | None
     # Next local midnight, when the count starts over.
     resets_at: datetime
+    # AI edits of a single day (separate allowance; None when own_key). Resets at midnight UTC.
+    day_edit_limit: int | None = None
+    day_edits_remaining: int | None = None
+
+
+class AiEditGroupRequest(BaseModel):
+    """Change one day with AI: what to change, and the day as it's currently being edited (else the saved one)."""
+
+    instruction: str = Field(min_length=3, max_length=500)
+    group: dict[str, Any] | None = None
+
+    @field_validator("instruction")
+    @classmethod
+    def _strip_instruction(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Tell the AI what to change")
+        return value
+
+
+class AiEditGroupResponse(BaseModel):
+    """The AI's version of the day — not saved; the app shows it in the day editor to review and save."""
+
+    group: dict[str, Any]
+    # Day edits left today on the shared key; None with the user's own key.
+    remaining: int | None
 
 
 class UpdatePlanContentRequest(BaseModel):

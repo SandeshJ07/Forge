@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  deleteWorkout,
   fetchRecentWorkouts,
   fetchWorkoutDetail,
   fetchWorkoutsBetween,
@@ -101,5 +102,21 @@ export function useStatsOverview() {
     queryKey: ['stats', userId],
     queryFn: fetchStatsOverview,
     enabled: Boolean(userId),
+  });
+}
+
+/** Deletes a workout and refreshes everything built from it (lists, calendar, records, stats). */
+export function useDeleteWorkout() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (workoutId: string) => deleteWorkout(workoutId),
+    onSuccess: (_data, workoutId) => {
+      queryClient.removeQueries({ queryKey: ['workouts', userId, 'detail', workoutId] });
+      queryClient.removeQueries({ queryKey: ['run-route', userId, workoutId] });
+      queryClient.invalidateQueries({ queryKey: ['workouts', userId] });
+      queryClient.invalidateQueries({ queryKey: ['personal-records', userId] });
+      queryClient.invalidateQueries({ queryKey: ['stats', userId] });
+    },
   });
 }

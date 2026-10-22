@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.personal_record import PersonalRecord
+from app.models.workout import Workout, WorkoutSet
 
 
 class SetCandidate:
@@ -64,3 +65,37 @@ def update_personal_records(db: Session, user_id: UUID, candidates: list[SetCand
 
     db.commit()
     return list(new_best_by_exercise.keys())
+
+
+def recompute_personal_records(db: Session, user_id: UUID, exercise_ids: set[UUID]) -> None:
+    """
+    Rebuilds the records for these exercises from the sets still logged — after a
+    workout is deleted. The best weight wins (earliest time it was lifted on a tie);
+    an exercise with no weighted sets left loses its record. Caller commits.
+    """
+    for exercise_id in exercise_ids:
+        best = (
+            db.query(WorkoutSet, Workout.date)
+            .join(Workout, Workout.id == WorkoutSet.workout_id)
+            .filter(
+                Workout.user_id == user_id,
+                WorkoutSet.exercise_id == exercise_id,
+                WorkoutSet.weight_kg.is_not(None),
+                WorkoutSet.weight_kg > 0,
+            )
+            .order_by(WorkoutSet.weight_kg.desc(), Workout.date.asc())
+            .first()
+        )
+        record = db.get(PersonalRecord, (user_id, exercise_id))
+        if best is None:
+            if record is not None:
+                db.delete(record)
+            continue
+        best_set, achieved = best
+        if record is None:
+            record = PersonalRecord(user_id=user_id, exercise_id=exercise_id)
+            db.add(record)
+        record.best_weight_kg = best_set.weight_kg
+        record.best_weight_reps = best_set.reps
+        record.achieved_at = achieved
+        record.workout_id = best_set.workout_id

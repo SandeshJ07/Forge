@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Plan generations per user per day (user's local calendar day) on the shared
     # keys above. Users with their own key aren't limited. 0 disables the shared keys.
     shared_key_daily_plan_limit: int = 5
+    # AI edits of a single plan day per user per day (UTC) on the shared keys — smaller calls, so a
+    # separate, larger allowance that doesn't use up plan generations. Own keys aren't limited.
+    shared_key_daily_day_edit_limit: int = 15
 
     # Google Sign-In: OAuth client IDs (Google Cloud Console → Credentials) whose
     # ID tokens are accepted — web, iOS and Android each have their own. Comma-

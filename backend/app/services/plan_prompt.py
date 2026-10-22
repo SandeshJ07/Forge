@@ -299,3 +299,75 @@ def build_plan_prompt(data: PlanGenerationInput) -> str:
 Respond with ONLY valid JSON matching this exact shape, no markdown fences, no commentary:
 
 {_build_plan_json_schema_description(data.include_warmup, weight_unit)}"""
+
+
+def build_day_edit_prompt(
+    data: PlanGenerationInput,
+    *,
+    plan_title: str,
+    group_json: str,
+    other_days: list[str],
+    instruction: str,
+) -> str:
+    """
+    Prompt for rewriting ONE day ("group") of an existing plan to follow the
+    athlete's instruction. Same athlete context as a full plan, but the answer is
+    a single group, so it's a much smaller call.
+    """
+    weight_unit = "lb" if data.unit_system == "imperial" else "kg"
+    pr_rows = ", ".join(
+        f"{pr.name}: {pr.best_weight_kg}kg" + (f" x{pr.best_weight_reps}" if pr.best_weight_reps else "")
+        for pr in data.personal_records[:20]
+    )
+    other = "\n".join(f"- {line}" for line in other_days) or "- none"
+    return f"""You are an experienced, evidence-based strength & conditioning coach. An athlete wants to change ONE day of their training plan "{plan_title}". Rewrite that day so it follows their request, and keep everything they didn't ask to change.
+
+## The athlete's request
+{instruction}
+
+## The day to change (JSON)
+{group_json}
+
+## The plan's other days (for balance across the week — don't change them)
+{other}
+
+## Athlete profile
+- {_goals_line(data.goals)}
+- Experience level: {data.experience_level or 'not specified, assume beginner'}
+- Equipment access: {', '.join(data.equipment_access) if data.equipment_access else 'assume standard commercial gym'}
+- Units: write weights in {weight_unit}
+- Personal records: {pr_rows or 'none logged yet'}
+- Liked/preferred exercises: {', '.join(data.liked_exercises) or 'none marked'}
+- Disliked exercises (never include): {', '.join(data.disliked_exercises) or 'none marked'}
+
+## Exercises available in the app (prefer these, spelled exactly as written)
+{', '.join(data.available_exercise_names) or 'none'}
+
+## Rules
+- Make the change asked for; keep the rest of the day (exercises, sets, targets, rest, warm-up, name) as it is unless the request needs it changed.
+- Keep "weekdays" exactly as given unless the athlete asks to move the day.
+- Keep it a sound session: compounds before isolation, sensible volume for the experience level, enough rest.
+- Each exercise needs "how_to" (1-2 sentences of setup and form cues) and an "intensity" target.
+- If the request is unsafe or impossible with the equipment, follow it as closely as is safe and say what you adjusted in that exercise's "notes".
+
+## Output
+Respond with ONLY valid JSON for the rewritten day, no markdown fences, no commentary, in this shape:
+{{
+  "name": string,
+  "focus": string,
+  "weekdays": array of "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun",
+  "estimated_minutes": number,
+  "warmup": [{{"exercise_name": string, "tracking": string, "duration_or_reps": string, "how_to": string, "notes": string (optional)}}],
+  "exercises": [
+    {{
+      "exercise_name": string,
+      "tracking": "weight_reps" | "bodyweight_reps" | "weighted_bodyweight" | "duration" | "distance_duration" | "weight_distance",
+      "sets": number,
+      "reps": string,
+      "rest_seconds": number,
+      "intensity": string,
+      "how_to": string,
+      "notes": string (optional)
+    }}
+  ]
+}}"""

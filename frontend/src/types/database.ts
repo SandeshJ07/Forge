@@ -235,6 +235,9 @@ export interface PlanUsage {
   remaining: number | null;
   /** Next local midnight (ISO), when the count starts over. */
   resets_at: string;
+  /** AI edits of a single day: a separate daily allowance (null with the user's own key). */
+  day_edit_limit?: number | null;
+  day_edits_remaining?: number | null;
 }
 
 export interface IntegrationToken {

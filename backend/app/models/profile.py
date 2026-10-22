@@ -78,6 +78,9 @@ class UserProfile(Base):
     timezone: Mapped[str | None] = mapped_column(String)
     # Local date the last reminder went out, so each day's is sent once.
     gym_reminder_last_sent: Mapped[date | None] = mapped_column(Date)
+    # AI day edits on the shared key: how many on which (UTC) day, for the daily allowance.
+    ai_day_edits_on: Mapped[date | None] = mapped_column(Date)
+    ai_day_edits_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     # Read-only, from users: whether the account has a password (Google-only
     # accounts don't). The app uses it to ask for the right re-confirmation.

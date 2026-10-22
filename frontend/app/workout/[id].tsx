@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,8 @@ import { MuscleMap } from '@/components/MuscleMap';
 import { RunRouteSection } from '@/components/RunRouteSection';
 import { WorkoutFeedbackControl } from '@/components/WorkoutFeedbackControl';
 import { formatClock } from '@/components/WorkoutSessionOverlay';
-import { useWorkoutDetail } from '@/hooks/useWorkouts';
+import { useDeleteWorkout, useWorkoutDetail } from '@/hooks/useWorkouts';
+import { ApiError } from '@/lib/apiClient';
 import { useUnitStore } from '@/stores/useUnitStore';
 import { formatDayTime, formatWeight, humanize, LB_PER_KG } from '@/lib/format';
 import { hasWorkoutInProgress, useWorkoutSessionStore, type NewExercise } from '@/stores/useWorkoutSessionStore';
@@ -89,6 +90,28 @@ export default function WorkoutDetailScreen() {
   const activeSession = useWorkoutSessionStore((s) => s.session);
   const startWorkout = useWorkoutSessionStore((s) => s.startWorkout);
   const inProgress = hasWorkoutInProgress(activeSession);
+  const deleteWorkout = useDeleteWorkout();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Tap twice to delete (the first tap arms it for a few seconds), like "Discard workout".
+  async function handleDelete() {
+    if (!id) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setDeleteError(null);
+      setTimeout(() => setConfirmDelete(false), 4000);
+      return;
+    }
+    try {
+      await deleteWorkout.mutateAsync(id);
+      if (router.canGoBack()) router.back();
+      else router.replace('/log');
+    } catch (err) {
+      setConfirmDelete(false);
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete this workout. Please try again.');
+    }
+  }
 
   // One workout at a time: with one already under way, this just goes back to it.
   function handleStart() {
@@ -248,6 +271,23 @@ export default function WorkoutDetailScreen() {
       <Card style={styles.card}>
         <WorkoutFeedbackControl workout={workout} />
       </Card>
+
+      <View style={styles.deleteArea}>
+        {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+        <Text
+          style={[styles.deleteLink, confirmDelete && styles.deleteLinkConfirm]}
+          onPress={deleteWorkout.isPending ? undefined : handleDelete}
+          accessibilityRole="button"
+          accessibilityHint="Tap twice to delete"
+        >
+          {deleteWorkout.isPending ? 'Deleting…' : confirmDelete ? 'Tap again to delete this workout' : 'Delete workout'}
+        </Text>
+        {confirmDelete ? (
+          <Text style={[styles.muted, styles.centered]}>
+            Its sets{workout.run ? ' and route' : ''} are removed for good, and any records from it are recalculated.
+          </Text>
+        ) : null}
+      </View>
     </ScreenContainer>
   );
 }
@@ -276,6 +316,10 @@ function Legend({ color, title, muscles }: { color: string; title: string; muscl
 }
 
 const styles = StyleSheet.create({
+  deleteArea: { gap: spacing.xs, alignItems: 'center', paddingVertical: spacing.sm },
+  deleteLink: { color: colors.textMuted, fontSize: 14, fontWeight: '600', padding: spacing.sm, cursor: 'pointer' },
+  deleteLinkConfirm: { color: colors.danger, fontWeight: '700' },
+  deleteError: { color: colors.danger, fontSize: 13, textAlign: 'center' },
   flex: { flex: 1 },
   loader: { marginTop: spacing.xl },
   emptyCard: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl },

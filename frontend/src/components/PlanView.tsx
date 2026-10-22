@@ -27,6 +27,13 @@ interface PlanViewProps {
    * error is shown on the card and the edit stays open).
    */
   onSaveGroup?: (groupIndex: number, group: PlanGroup) => Promise<unknown> | void;
+  /**
+   * Adds "Ask AI to change this day" to the day editor: returns the AI's version of
+   * the day (not saved) for the user to check, tweak and save.
+   */
+  onAiEditGroup?: (groupIndex: number, group: PlanGroup, instruction: string) => Promise<PlanGroup>;
+  /** AI day edits left today on the shared key (null/undefined = unlimited or unknown). */
+  aiEditsRemaining?: number | null;
 }
 
 function formatRest(seconds: number): string {
@@ -43,7 +50,7 @@ function groupProblem(group: PlanGroup): string | null {
 }
 
 /** A plan's exercise groups ("days"); each one editable on its own when onSaveGroup is given. */
-export function PlanView({ plan, onStartGroup, startLabel, onSaveGroup }: PlanViewProps) {
+export function PlanView({ plan, onStartGroup, startLabel, onSaveGroup, onAiEditGroup, aiEditsRemaining }: PlanViewProps) {
   const groups = planGroups(plan);
   const [editing, setEditing] = useState<{ index: number; draft: PlanGroup } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -95,6 +102,21 @@ export function PlanView({ plan, onStartGroup, startLabel, onSaveGroup }: PlanVi
               setError(null);
             }}
             takenDays={new Set(groups.filter((_, i) => i !== index).flatMap((g) => g.weekdays ?? []))}
+            header={
+              onAiEditGroup ? (
+                <AiEditBox
+                  remaining={aiEditsRemaining}
+                  disabled={saving}
+                  onSubmit={async (instruction) => {
+                    const before = editing.draft;
+                    const draft = await onAiEditGroup(index, before, instruction);
+                    setEditing({ index, draft });
+                    setError(null);
+                    return () => setEditing({ index, draft: before });
+                  }}
+                />
+              ) : null
+            }
             footer={
               <View style={styles.editFooter}>
                 {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -135,6 +157,7 @@ function GroupCard({
   onEdit,
   onChange,
   takenDays,
+  header,
   footer,
 }: {
   group: PlanGroup;
@@ -142,6 +165,8 @@ function GroupCard({
   onChange?: (group: PlanGroup) => void;
   /** Weekdays other days already use (a weekday belongs to one day only). */
   takenDays?: Set<Weekday>;
+  /** Shown at the top of the editor (the AI box). */
+  header?: ReactNode;
   footer?: ReactNode;
 }) {
   const router = useRouter();
@@ -173,6 +198,7 @@ function GroupCard({
       {editing ? (
         <View style={styles.editHead}>
           <Text style={styles.editEyebrow}>Editing this day</Text>
+          {header}
           <View style={styles.editorRow}>
             <View style={[styles.editorField, styles.flex]}>
               <Text style={styles.editorLabel}>Name</Text>
@@ -361,6 +387,109 @@ function GroupCard({
   );
 }
 
+const AI_EXAMPLES = ['Swap squats for leg press', 'Make it 45 minutes', 'More core work', 'No barbell today'];
+
+/**
+ * "Ask AI to change this day": the instruction goes to the AI with the day as it is now;
+ * its version replaces the draft (Undo puts the old one back). Nothing is saved until Save day.
+ */
+function AiEditBox({
+  remaining,
+  disabled,
+  onSubmit,
+}: {
+  remaining?: number | null;
+  disabled?: boolean;
+  /** Resolves with an undo function. */
+  onSubmit: (instruction: string) => Promise<() => void>;
+}) {
+  const [instruction, setInstruction] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [undo, setUndo] = useState<(() => void) | null>(null);
+  const outOfEdits = remaining === 0;
+
+  async function submit() {
+    const text = instruction.trim();
+    if (text.length < 3) {
+      setError('Tell the AI what to change, e.g. "swap squats for leg press".');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const undoFn = await onSubmit(text);
+      setUndo(() => undoFn);
+      setInstruction('');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'The AI couldn\'t change this day. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={styles.aiBox}>
+      <View style={styles.aiHead}>
+        <Ionicons name="sparkles" size={15} color={colors.primary} />
+        <Text style={styles.aiTitle}>Ask AI to change this day</Text>
+        {remaining != null ? <Text style={styles.aiCount}>{remaining} left today</Text> : null}
+      </View>
+      {undo ? (
+        <View style={styles.aiDone}>
+          <Text style={[styles.howTo, styles.flex]}>Done — check the AI's version below, then Save day.</Text>
+          <Text
+            style={styles.cancelLink}
+            onPress={() => {
+              undo();
+              setUndo(null);
+            }}
+            accessibilityRole="button"
+          >
+            Undo
+          </Text>
+        </View>
+      ) : null}
+      <TextInput
+        value={instruction}
+        onChangeText={(v) => {
+          setInstruction(v);
+          setError(null);
+        }}
+        placeholder="e.g. Swap squats for leg press and keep it under 45 minutes"
+        placeholderTextColor={colors.textMuted}
+        multiline
+        maxLength={500}
+        editable={!busy}
+        style={[styles.editorInput, styles.aiInput]}
+        accessibilityLabel="What should the AI change?"
+      />
+      {!instruction ? (
+        <View style={styles.aiExamples}>
+          {AI_EXAMPLES.map((example) => (
+            <Text key={example} style={styles.aiExample} onPress={() => setInstruction(example)} accessibilityRole="button">
+              {example}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {outOfEdits ? (
+        <Text style={styles.howTo}>No AI edits left today — you can still change the day by hand below.</Text>
+      ) : (
+        <Button
+          label={busy ? 'Working on it… (10–30 s)' : 'Change with AI'}
+          size="small"
+          variant="secondary"
+          onPress={submit}
+          loading={false}
+          disabled={busy || disabled}
+        />
+      )}
+    </View>
+  );
+}
+
 function IconButton({
   icon,
   label,
@@ -532,6 +661,30 @@ const styles = StyleSheet.create({
   editButtonText: { color: colors.text, fontSize: 12, fontWeight: '700' },
   pressed: { opacity: 0.7 },
   editFooter: { gap: spacing.sm, marginTop: spacing.sm },
+  aiBox: {
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.background,
+  },
+  aiHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aiTitle: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '700' },
+  aiCount: { color: colors.textMuted, fontSize: 12 },
+  aiDone: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  aiInput: { height: undefined, minHeight: 60, paddingVertical: spacing.sm, textAlignVertical: 'top' },
+  aiExamples: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  aiExample: {
+    color: colors.textMuted,
+    fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    cursor: 'pointer',
+  },
   editButtons: { flexDirection: 'row', gap: spacing.sm },
   error: { color: colors.danger, fontSize: 13 },
   dayLabel: { flexShrink: 1, color: colors.text, fontSize: 16, fontWeight: '700' },

@@ -22,7 +22,8 @@ from app.schemas.workout import (
     WorkoutSetResponse,
 )
 from app.models.run_route import RunRoute
-from app.services.personal_records import SetCandidate, update_personal_records
+from app.models.personal_record import PersonalRecord
+from app.services.personal_records import SetCandidate, recompute_personal_records, update_personal_records
 
 router = APIRouter(prefix="/workouts", tags=["workouts"])
 
@@ -241,3 +242,26 @@ def rate_workout(
     db.commit()
     db.refresh(workout)
     return workout
+
+
+@router.delete("/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workout(
+    workout_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> None:
+    """
+    Deletes a logged workout with its sets and any recorded route. Personal records
+    that came from it are recalculated from the workouts that are left.
+    """
+    workout = db.get(Workout, workout_id)
+    if workout is None or workout.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found")
+    affected = {
+        exercise_id
+        for (exercise_id,) in db.query(PersonalRecord.exercise_id).filter(
+            PersonalRecord.user_id == current_user.id, PersonalRecord.workout_id == workout_id
+        )
+    }
+    db.delete(workout)  # sets and the route go with it (ON DELETE CASCADE)
+    db.flush()
+    recompute_personal_records(db, current_user.id, affected)
+    db.commit()

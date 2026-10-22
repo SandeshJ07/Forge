@@ -6,7 +6,15 @@ import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PlanView } from '@/components/PlanView';
-import { useAcceptPlan, useDismissPlan, useLatestPlan, usePendingPlan, useUpdatePlanContent } from '@/hooks/usePlans';
+import {
+  useAcceptPlan,
+  useAiEditPlanGroup,
+  useDismissPlan,
+  useLatestPlan,
+  usePendingPlan,
+  usePlanUsage,
+  useUpdatePlanContent,
+} from '@/hooks/usePlans';
 import { ApiError } from '@/lib/apiClient';
 import { formatDayTime } from '@/lib/format';
 import type { PlanGroup, PlanPayload } from '@/types/database';
@@ -25,6 +33,8 @@ export default function PlanReviewScreen() {
   const acceptPlan = useAcceptPlan();
   const dismissPlan = useDismissPlan();
   const updatePlan = useUpdatePlanContent();
+  const aiEditGroup = useAiEditPlanGroup();
+  const { data: usage } = usePlanUsage();
 
   const [draft, setDraft] = useState<PlanPayload | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -137,7 +147,14 @@ export default function PlanReviewScreen() {
         </Text>
       </View>
 
-      <PlanView plan={draft} onSaveGroup={saveDay} />
+      <PlanView
+        plan={draft}
+        onSaveGroup={saveDay}
+        onAiEditGroup={async (groupIndex, group, instruction) =>
+          (await aiEditGroup.mutateAsync({ planId: pending.id, groupIndex, instruction, group })).group
+        }
+        aiEditsRemaining={usage?.day_edits_remaining}
+      />
 
       {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
