@@ -8,7 +8,10 @@ Try it on the web at **[forge-bro.vercel.app](https://forge-bro.vercel.app)**, a
 
 ## Features
 - Generate a personalised weekly training plan with an AI coach (Gemini, Claude or Groq), based on your schedule, target muscles, equipment, goals and history
+- Ask the AI coach to rework a single day of your plan without regenerating the whole week
 - Log workouts set by set, with an automatic rest timer and personal-record detection
+- Delete a logged workout you didn't mean to save
+- Get gym reminders on the days and at the time you choose (push notifications on the web, local notifications in the app)
 - Track weekly streaks, workout history, body weight and measurements with charts
 - Browse a library of 870+ exercises with instructions, photos and muscle maps
 - Sign in with email (6-digit code) or Google; personal data and API keys are encrypted at rest
@@ -19,6 +22,7 @@ Try it on the web at **[forge-bro.vercel.app](https://forge-bro.vercel.app)**, a
 - Backend: Python, FastAPI, SQLAlchemy, Alembic
 - Database: PostgreSQL (Neon)
 - AI: Google Gemini, Anthropic Claude, Groq
+- Notifications: Web Push (VAPID), scheduled by a GitHub Actions cron
 - Hosting: Render (API), Vercel (web)
 
 ## My role
